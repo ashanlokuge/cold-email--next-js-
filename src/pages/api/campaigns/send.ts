@@ -127,7 +127,8 @@ export default async function handler(
       failed: 0,
       total: recipients.length,
       completed: false,
-      startTime: Date.now()
+      startTime: Date.now(),
+      status: 'running'
     });
 
     // Start sending emails asynchronously
@@ -359,6 +360,37 @@ async function sendEmailsAsync(
 
     // EXECUTE WITH GUARANTEED DISTRIBUTION (using pre-calculated sequence)
     for (let i = 0; i < recipients.length; i++) {
+      // Check campaign status before each email
+      const currentStatus = getCampaignStatus();
+      
+      // Handle stop command
+      if (currentStatus.status === 'stopped' || !currentStatus.isRunning) {
+        console.log(`⏹️ Campaign stopped by user at ${i}/${recipients.length} emails`);
+        break;
+      }
+      
+      // Handle pause command
+      while (currentStatus.status === 'paused' && currentStatus.isRunning) {
+        console.log(`⏸️ Campaign paused at ${i}/${recipients.length} emails. Waiting...`);
+        await sleep(2000); // Check every 2 seconds
+        const newStatus = getCampaignStatus();
+        if (newStatus.status === 'stopped' || !newStatus.isRunning) {
+          console.log(`⏹️ Campaign stopped while paused at ${i}/${recipients.length} emails`);
+          break;
+        }
+        if (newStatus.status === 'running') {
+          console.log(`▶️ Campaign resumed at ${i}/${recipients.length} emails`);
+          break;
+        }
+      }
+      
+      // Double-check if we should continue after pause handling
+      const finalStatus = getCampaignStatus();
+      if (finalStatus.status === 'stopped' || !finalStatus.isRunning) {
+        console.log(`⏹️ Campaign stopped after pause check at ${i}/${recipients.length} emails`);
+        break;
+      }
+      
       const recipient = recipients[i];
       const sender = senderSequence[i]; // Use pre-calculated sequence instead of simple round-robin
       

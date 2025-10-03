@@ -10,6 +10,7 @@ type CampaignStatus = {
   total: number;
   completed: boolean;
   startTime: number | null;
+  status: 'idle' | 'running' | 'paused' | 'stopped' | 'completed';
 };
 
 // Global state that persists across API calls (like HTML/JS project)
@@ -28,7 +29,8 @@ const defaultCampaignStatus: CampaignStatus = {
   failed: 0,
   total: 0,
   completed: false,
-  startTime: null
+  startTime: null,
+  status: 'idle'
 };
 
 // Initialize or get existing campaign status
@@ -82,7 +84,8 @@ export function resetCampaignStatus() {
     failed: 0,
     total: 0,
     completed: false,
-    startTime: null
+    startTime: null,
+    status: 'idle'
   };
   
   // Update global state
@@ -118,4 +121,40 @@ export function getEmailDetails() {
 export function clearEmailDetails() {
   emailDetails = [];
   globalForCampaign.emailDetailsStore = emailDetails;
+}
+
+// Campaign control functions
+export function pauseCampaign() {
+  if (currentCampaignStatus.isRunning && currentCampaignStatus.status === 'running') {
+    currentCampaignStatus = {
+      ...currentCampaignStatus,
+      status: 'paused'
+    };
+    globalForCampaign.campaignStatus = currentCampaignStatus;
+    console.log('⏸️ Campaign paused');
+  }
+}
+
+export function resumeCampaign() {
+  if (currentCampaignStatus.isRunning && currentCampaignStatus.status === 'paused') {
+    currentCampaignStatus = {
+      ...currentCampaignStatus,
+      status: 'running'
+    };
+    globalForCampaign.campaignStatus = currentCampaignStatus;
+    console.log('▶️ Campaign resumed');
+  }
+}
+
+export function stopCampaign() {
+  if (currentCampaignStatus.isRunning) {
+    currentCampaignStatus = {
+      ...currentCampaignStatus,
+      isRunning: false,
+      status: 'stopped',
+      completed: true
+    };
+    globalForCampaign.campaignStatus = currentCampaignStatus;
+    console.log('⏹️ Campaign stopped');
+  }
 }

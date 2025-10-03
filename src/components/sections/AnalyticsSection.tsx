@@ -11,6 +11,7 @@ interface CampaignStatus {
   startTime: number | null;
   duration?: number;
   subject?: string;
+  status?: 'idle' | 'running' | 'paused' | 'stopped' | 'completed';
 }
 
 interface EmailDetail {
@@ -42,7 +43,8 @@ export default function AnalyticsSection() {
     failed: 0,
     total: 0,
     completed: false,
-    startTime: null
+    startTime: null,
+    status: 'idle'
   });
   const [emailDetails, setEmailDetails] = useState<EmailDetail[]>([]);
   const [activityLog, setActivityLog] = useState<string[]>([]);
@@ -295,13 +297,51 @@ export default function AnalyticsSection() {
           failed: 0,
           total: 0,
           completed: false,
-          startTime: null
+          startTime: null,
+          status: 'idle'
         });
         addToActivityLog('🔄 Campaign manually reset');
       }
     } catch (error) {
       console.error('Error resetting campaign:', error);
       addToActivityLog('❌ Failed to reset campaign');
+    }
+  };
+
+  // Campaign control functions
+  const pauseCampaign = async () => {
+    try {
+      const response = await fetch('/api/campaigns/pause', { method: 'POST' });
+      if (response.ok) {
+        addToActivityLog('⏸️ Campaign paused by user');
+      }
+    } catch (error) {
+      console.error('Error pausing campaign:', error);
+      addToActivityLog('❌ Failed to pause campaign');
+    }
+  };
+
+  const resumeCampaign = async () => {
+    try {
+      const response = await fetch('/api/campaigns/resume', { method: 'POST' });
+      if (response.ok) {
+        addToActivityLog('▶️ Campaign resumed by user');
+      }
+    } catch (error) {
+      console.error('Error resuming campaign:', error);
+      addToActivityLog('❌ Failed to resume campaign');
+    }
+  };
+
+  const stopCampaign = async () => {
+    try {
+      const response = await fetch('/api/campaigns/stop', { method: 'POST' });
+      if (response.ok) {
+        addToActivityLog('⏹️ Campaign stopped by user');
+      }
+    } catch (error) {
+      console.error('Error stopping campaign:', error);
+      addToActivityLog('❌ Failed to stop campaign');
     }
   };
 
@@ -397,6 +437,66 @@ export default function AnalyticsSection() {
             </div>
           </div>
 
+          {/* Modern Campaign Control Panel */}
+          {campaignStatus.isRunning && (
+            <div className="mb-8 bg-gradient-to-r from-gray-50 to-gray-100 rounded-2xl p-6 border border-gray-200/60">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <div className="flex items-center space-x-2">
+                    <div className={`w-4 h-4 rounded-full ${
+                      campaignStatus.status === 'running' ? 'bg-green-500 animate-pulse' : 
+                      campaignStatus.status === 'paused' ? 'bg-yellow-500' :
+                      'bg-red-500'
+                    }`}></div>
+                    <span className="text-lg font-semibold text-gray-700">
+                      Campaign Control
+                    </span>
+                  </div>
+                  <div className="text-sm text-gray-500">
+                    Status: <span className="font-medium text-gray-700 capitalize">{campaignStatus.status || 'running'}</span>
+                  </div>
+                </div>
+                
+                <div className="flex items-center space-x-3">
+                  {campaignStatus.status === 'running' ? (
+                    <button
+                      onClick={pauseCampaign}
+                      className="group relative flex items-center space-x-2 bg-white hover:bg-yellow-50 text-yellow-700 px-6 py-3 rounded-xl font-medium transition-all duration-300 border border-yellow-200 hover:border-yellow-300 shadow-sm hover:shadow-md transform hover:scale-105"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6" />
+                      </svg>
+                      <span>Pause Campaign</span>
+                      <div className="absolute inset-0 bg-yellow-100 rounded-xl opacity-0 group-hover:opacity-20 transition-opacity duration-300"></div>
+                    </button>
+                  ) : campaignStatus.status === 'paused' ? (
+                    <button
+                      onClick={resumeCampaign}
+                      className="group relative flex items-center space-x-2 bg-white hover:bg-green-50 text-green-700 px-6 py-3 rounded-xl font-medium transition-all duration-300 border border-green-200 hover:border-green-300 shadow-sm hover:shadow-md transform hover:scale-105"
+                    >
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z"/>
+                      </svg>
+                      <span>Resume Campaign</span>
+                      <div className="absolute inset-0 bg-green-100 rounded-xl opacity-0 group-hover:opacity-20 transition-opacity duration-300"></div>
+                    </button>
+                  ) : null}
+                  
+                  <button
+                    onClick={stopCampaign}
+                    className="group relative flex items-center space-x-2 bg-white hover:bg-red-50 text-red-700 px-6 py-3 rounded-xl font-medium transition-all duration-300 border border-red-200 hover:border-red-300 shadow-sm hover:shadow-md transform hover:scale-105"
+                  >
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M6 6h12v12H6z"/>
+                    </svg>
+                    <span>Stop Campaign</span>
+                    <div className="absolute inset-0 bg-red-100 rounded-xl opacity-0 group-hover:opacity-20 transition-opacity duration-300"></div>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
               <div className="flex items-center justify-between">
@@ -464,13 +564,23 @@ export default function AnalyticsSection() {
                   <div className="text-sm text-gray-600">Success Rate</div>
                 </div>
                 <div>
-                  <div className="flex items-center justify-center space-x-2">
-                    <div className={`w-3 h-3 rounded-full ${campaignStatus.isRunning ? 'bg-success-500 animate-pulse' : 'bg-gray-400'}`}></div>
+                  <div className="flex items-center justify-center space-x-2 mb-2">
+                    <div className={`w-3 h-3 rounded-full ${
+                      campaignStatus.status === 'running' ? 'bg-green-500 animate-pulse' : 
+                      campaignStatus.status === 'paused' ? 'bg-yellow-500' :
+                      campaignStatus.status === 'stopped' ? 'bg-red-500' :
+                      campaignStatus.status === 'completed' ? 'bg-blue-500' :
+                      'bg-gray-400'
+                    }`}></div>
                     <span className="text-lg font-bold text-gray-700">
-                      {campaignStatus.isRunning ? 'Running' : 'Stopped'}
+                      {campaignStatus.status === 'running' ? 'Running' :
+                       campaignStatus.status === 'paused' ? 'Paused' :
+                       campaignStatus.status === 'stopped' ? 'Stopped' :
+                       campaignStatus.status === 'completed' ? 'Completed' :
+                       'Idle'}
                     </span>
                   </div>
-                  <div className="text-sm text-gray-600">Status</div>
+                  <div className="text-sm text-gray-600 mb-3">Campaign Status</div>
                 </div>
               </div>
             </div>
