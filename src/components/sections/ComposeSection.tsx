@@ -6,15 +6,55 @@ interface ComposeSectionProps {
   recipients: Recipient[];
   senders: string[];
   templates: any[];
+  campaignFormData: {
+    campaignName: string;
+    subject: string;
+    body: string;
+    selectedSenders: string[];
+  };
+  setCampaignFormData: React.Dispatch<React.SetStateAction<{
+    campaignName: string;
+    subject: string;
+    body: string;
+    selectedSenders: string[];
+  }>>;
 }
 
-export default function ComposeSection({ recipients, senders, templates }: ComposeSectionProps) {
-  const [campaignName, setCampaignName] = useState('');
-  const [subject, setSubject] = useState('');
-  const [body, setBody] = useState('');
-  const [selectedSenders, setSelectedSenders] = useState<string[]>([]);
+export default function ComposeSection({ recipients, senders, templates, campaignFormData, setCampaignFormData }: ComposeSectionProps) {
+  // Use persistent form data from parent component
+  const { campaignName, subject, body, selectedSenders } = campaignFormData;
+  
+  // Local state for UI-only data
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState('');
+
+  // Helper functions to update persistent form data
+  const setCampaignName = (value: string) => {
+    setCampaignFormData(prev => ({ ...prev, campaignName: value }));
+  };
+
+  const setSubject = (value: string) => {
+    setCampaignFormData(prev => ({ ...prev, subject: value }));
+  };
+
+  const setBody = (value: string) => {
+    setCampaignFormData(prev => ({ ...prev, body: value }));
+  };
+
+  const setSelectedSenders = (value: string[]) => {
+    setCampaignFormData(prev => ({ ...prev, selectedSenders: value }));
+  };
+
+  const clearForm = () => {
+    setCampaignFormData({
+      campaignName: '',
+      subject: '',
+      body: '',
+      selectedSenders: []
+    });
+    setStatus('Form cleared');
+    setTimeout(() => setStatus(''), 2000);
+  };
 
   // Preview states
   const [previewRecipient, setPreviewRecipient] = useState<Recipient>({ 
@@ -291,28 +331,37 @@ Best regards,
               </div>
             </div>
 
-            <button
-              onClick={handleSendCampaign}
-              disabled={isLoading || recipients.length === 0 || selectedSenders.length === 0}
-              className={`w-full px-6 py-4 rounded-2xl font-semibold text-lg transition-all duration-300 ${
-                isLoading || recipients.length === 0 || selectedSenders.length === 0
-                  ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-primary-500 to-primary-600 text-white hover:from-primary-600 hover:to-primary-700 shadow-blue hover:shadow-large'
-              }`}
-            >
-              {isLoading ? (
-                <div className="flex items-center justify-center space-x-2">
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  <span>Starting Campaign...</span>
-                </div>
-              ) : recipients.length === 0 ? (
-                'Import Recipients First'
-              ) : selectedSenders.length === 0 ? (
-                'Select Sender Emails'
-              ) : (
-                `Send to ${recipients.length} Recipients (${selectedSenders.length} senders)`
-              )}
-            </button>
+            <div className="flex space-x-3">
+              <button
+                onClick={clearForm}
+                className="px-4 py-3 rounded-2xl font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-all duration-300 border border-gray-300 hover:border-gray-400"
+              >
+                Clear Form
+              </button>
+              
+              <button
+                onClick={handleSendCampaign}
+                disabled={isLoading || recipients.length === 0 || selectedSenders.length === 0}
+                className={`flex-1 px-6 py-4 rounded-2xl font-semibold text-lg transition-all duration-300 ${
+                  isLoading || recipients.length === 0 || selectedSenders.length === 0
+                    ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-primary-500 to-primary-600 text-white hover:from-primary-600 hover:to-primary-700 shadow-blue hover:shadow-large'
+                }`}
+              >
+                {isLoading ? (
+                  <div className="flex items-center justify-center space-x-2">
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>Starting Campaign...</span>
+                  </div>
+                ) : recipients.length === 0 ? (
+                  'Import Recipients First'
+                ) : selectedSenders.length === 0 ? (
+                  'Select Sender Emails'
+                ) : (
+                  `Send to ${recipients.length} Recipients (${selectedSenders.length} senders)`
+                )}
+              </button>
+            </div>
 
             {status && (
               <div className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200/60 rounded-2xl p-4 shadow-soft">

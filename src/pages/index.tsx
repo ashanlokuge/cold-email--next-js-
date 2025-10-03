@@ -19,6 +19,32 @@ export default function Home() {
   // Shared state for templates across all components
   const [templates, setTemplates] = useState([]);
 
+  // Persistent campaign form state with localStorage
+  const [campaignFormData, setCampaignFormData] = useState({
+    campaignName: '',
+    subject: '',
+    body: '',
+    selectedSenders: [] as string[]
+  });
+
+  // Load form data from localStorage on component mount
+  useEffect(() => {
+    const savedFormData = localStorage.getItem('campaignFormData');
+    if (savedFormData) {
+      try {
+        const parsedData = JSON.parse(savedFormData);
+        setCampaignFormData(parsedData);
+      } catch (error) {
+        console.log('Error loading saved form data:', error);
+      }
+    }
+  }, []);
+
+  // Save form data to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('campaignFormData', JSON.stringify(campaignFormData));
+  }, [campaignFormData]);
+
   const renderActiveSection = () => {
     switch (activeSection) {
       case 'compose':
@@ -26,6 +52,8 @@ export default function Home() {
           recipients={recipients}
           senders={senders}
           templates={templates}
+          campaignFormData={campaignFormData}
+          setCampaignFormData={setCampaignFormData}
         />;
       case 'analytics':
         return <AnalyticsSection />;
@@ -49,6 +77,8 @@ export default function Home() {
           recipients={recipients}
           senders={senders}
           templates={templates}
+          campaignFormData={campaignFormData}
+          setCampaignFormData={setCampaignFormData}
         />;
     }
   };
