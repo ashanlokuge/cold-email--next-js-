@@ -256,7 +256,7 @@ export default function RecipientsSection({ recipients, setRecipients }: Recipie
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="max-w-6xl mx-auto space-y-6 pb-16">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-gray-900 mb-2">Import Recipients</h1>

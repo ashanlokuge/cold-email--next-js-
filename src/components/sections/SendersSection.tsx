@@ -122,7 +122,7 @@ export default function SendersSection({ senders, setSenders }: SendersSectionPr
   };
 
   return (
-    <div className="space-y-8 animate-slide-up">
+    <div className="space-y-8 animate-slide-up pb-16">
       {/* Header */}
       <div className="text-center max-w-2xl mx-auto">
         <h1 className="text-4xl font-bold bg-gradient-to-r from-primary-600 to-primary-700 bg-clip-text text-transparent mb-4">
