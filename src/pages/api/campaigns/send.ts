@@ -9,6 +9,7 @@ import {
   addEmailDetail,
   completeCampaign
 } from '@/lib/campaignState';
+import { getDb } from '@/lib/db';
 
 // API route configuration
 export const config = {
@@ -117,6 +118,35 @@ export default async function handler(
       });
     }
 
+    // Persist campaign to MongoDB (if configured)
+    let campaignId: string | null = null;
+    try {
+      const db = await getDb();
+      const campaignsColl = db.collection('campaigns');
+      const now = new Date();
+      const insertResult = await campaignsColl.insertOne({
+        name: campaignName,
+        subject,
+        body: text,
+        status: 'running',
+        settings: {
+          ratePerMinute: process.env.RATE_PER_MINUTE ? Number(process.env.RATE_PER_MINUTE) : 60,
+          jitterPercent: process.env.JITTER_PCT ? Number(process.env.JITTER_PCT) : 20,
+          maxRetries: process.env.MAX_RETRIES ? Number(process.env.MAX_RETRIES) : 3
+        },
+        selectedSenders: selectedSenders || [],
+        totals: { totalRecipients: recipients.length, sent: 0, success: 0, failed: 0 },
+        createdAt: now,
+        startedAt: now,
+        userId: 'seed-user'
+      });
+
+      campaignId = insertResult.insertedId.toString();
+    } catch (dbError) {
+      console.warn('MongoDB not available or failed to insert campaign:', dbError.message || dbError);
+      campaignId = null;
+    }
+
     // Initialize campaign status
     resetCampaignStatus();
     updateCampaignStatus({
@@ -128,16 +158,18 @@ export default async function handler(
       total: recipients.length,
       completed: false,
       startTime: Date.now(),
-      status: 'running'
+      status: 'running',
+      campaignId
     });
 
     // Start sending emails asynchronously
-    sendEmailsAsync(campaignName, subject, text, recipients, senders, selectedSenders);
+    sendEmailsAsync(campaignName, subject, text, recipients, senders, selectedSenders, campaignId);
 
     return res.status(200).json({ 
       success: true, 
       message: 'Campaign started successfully',
-      totalRecipients: recipients.length
+      totalRecipients: recipients.length,
+      campaignId
     });
 
   } catch (error) {
@@ -154,7 +186,8 @@ async function sendEmailsAsync(
   text: string, 
   recipients: Recipient[], 
   senders: any[],
-  selectedSenders?: string[]
+  selectedSenders?: string[],
+  campaignId?: string | null
 ) {
   try {
     // Filter senders if specific ones are selected
@@ -440,6 +473,25 @@ async function sendEmailsAsync(
           sender: sender
         });
 
+        // Persist email log to MongoDB if campaignId is present
+        if (campaignId) {
+          try {
+            const db = await getDb();
+            const emailLogs = db.collection('emailLogs');
+            await emailLogs.insertOne({
+              campaignId,
+              recipientEmail: recipient.email,
+              senderEmail: sender,
+              subject,
+              status: 'sent',
+              timestamp: new Date(),
+              messageId: null
+            });
+          } catch (err) {
+            console.warn('Failed to persist email log:', err?.message || err);
+          }
+        }
+
         // Console log matching HTML/JS project format
         console.log(`OK ${recipient.email} via ${sender} — status: 202 (${stats.sent}/${recipients.length})`);
 
@@ -449,6 +501,23 @@ async function sendEmailsAsync(
           successful: stats.successful,
           failed: stats.failed
         });
+
+        // Persist periodic totals to campaigns collection
+        if (campaignId && (stats.sent % 10 === 0 || stats.sent === recipients.length)) {
+          try {
+            const db = await getDb();
+            const campaignsColl = db.collection('campaigns');
+            await campaignsColl.updateOne({ _id: new (require('mongodb').ObjectId)(campaignId) }, {
+              $set: {
+                'totals.sent': stats.sent,
+                'totals.success': stats.successful,
+                'totals.failed': stats.failed
+              }
+            });
+          } catch (err) {
+            console.warn('Failed to persist campaign totals:', err?.message || err);
+          }
+        }
 
       } catch (error: any) {
         stats.sent++;
@@ -464,6 +533,25 @@ async function sendEmailsAsync(
           error: error.message || 'Unknown error',
           sender: sender
         });
+
+        // Persist failure to emailLogs in MongoDB
+        if (campaignId) {
+          try {
+            const db = await getDb();
+            const emailLogs = db.collection('emailLogs');
+            await emailLogs.insertOne({
+              campaignId,
+              recipientEmail: recipient.email,
+              senderEmail: sender,
+              subject,
+              status: 'failed',
+              timestamp: new Date(),
+              errorMessage: error?.message || null
+            });
+          } catch (err) {
+            console.warn('Failed to persist failed email log:', err?.message || err);
+          }
+        }
 
         // Console log for failed emails
         console.log(`❌ FAILED ${recipient.email} via ${sender} — error: ${error.message} (${stats.sent}/${recipients.length})`);
@@ -496,6 +584,24 @@ async function sendEmailsAsync(
 
     // Mark campaign as completed
     completeCampaign();
+    // Persist final campaign status
+    if (campaignId) {
+      try {
+        const db = await getDb();
+        const campaignsColl = db.collection('campaigns');
+        await campaignsColl.updateOne({ _id: new (require('mongodb').ObjectId)(campaignId) }, {
+          $set: {
+            status: 'completed',
+            'totals.sent': stats.sent,
+            'totals.success': stats.successful,
+            'totals.failed': stats.failed,
+            completedAt: new Date()
+          }
+        });
+      } catch (err) {
+        console.warn('Failed to persist final campaign status:', err?.message || err);
+      }
+    }
 
   } catch (error) {
     console.error('Campaign execution error:', error);

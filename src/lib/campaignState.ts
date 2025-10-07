@@ -11,6 +11,7 @@ type CampaignStatus = {
   completed: boolean;
   startTime: number | null;
   status: 'idle' | 'running' | 'paused' | 'stopped' | 'completed';
+  campaignId?: string | null;
 };
 
 // Global state that persists across API calls (like HTML/JS project)
