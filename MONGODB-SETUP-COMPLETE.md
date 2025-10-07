@@ -37,11 +37,8 @@
 
 ### .env.local
 ```
-MONGODB_URI="mongodb+srv://ashanlokuge10_db_user:Q9hc8mb2NfXBtqJC@coldsendz.b9c8uzw.mongodb.net/"
-MONGODB_DB=coldemail
-JWT_SECRET=development-jwt-secret-key-change-in-production-long-random-string
-DB_INIT_SECRET=your-init-secret-change-this
-```
+
+``
 
 ⚠️ **Security Note:** This file contains sensitive credentials. Never commit to git (already in .gitignore).
 
