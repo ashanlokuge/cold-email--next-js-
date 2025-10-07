@@ -6,19 +6,6 @@
       "src": "package.json",
       "use": "@vercel/next"
     }
-  ],
-  "env": {
-    "COMMUNICATION_SERVICES_CONNECTION_STRING": "@communication-services-connection-string",
-    "AZ_SUBSCRIPTION_ID": "@az-subscription-id",
-    "AZ_RESOURCE_GROUP": "@az-resource-group", 
-    "AZ_EMAIL_SERVICE_NAME": "@az-email-service-name",
-    "AZ_EMAIL_DOMAIN": "@az-email-domain",
-    "AZURE_AUTH_METHOD": "service-principal",
-    "AZURE_CLIENT_ID": "@azure-client-id",
-    "AZURE_CLIENT_SECRET": "@azure-client-secret",
-    "AZURE_TENANT_ID": "@azure-tenant-id",
-    "RATE_PER_MINUTE": "60",
-    "JITTER_PCT": "20",
-    "MAX_RETRIES": "3"
-  }
+  ]
+  
 }
