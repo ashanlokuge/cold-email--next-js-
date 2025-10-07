@@ -98,14 +98,14 @@ export default function SendersSection({ senders, setSenders }: SendersSectionPr
     }
   };
 
-  const deleteSender = async (username: string) => {
+  const deleteSender = async (email: string) => {
     if (!confirm('Are you sure you want to delete this sender?')) return;
 
     try {
-      const response = await fetch('/api/senders', {
+      const response = await fetch('/api/senders/manage', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username })
+        body: JSON.stringify({ email })
       });
 
       if (response.ok) {
@@ -253,7 +253,7 @@ export default function SendersSection({ senders, setSenders }: SendersSectionPr
                   </div>
                   
                   <button
-                    onClick={() => deleteSender(sender.split('@')[0])}
+                    onClick={() => deleteSender(sender)}
                     className="ml-2 bg-gradient-to-r from-error-500 to-error-600 text-white px-3 py-1.5 rounded-lg hover:from-error-600 hover:to-error-700 transition-all duration-300 font-medium text-xs flex-shrink-0"
                   >
                     Delete

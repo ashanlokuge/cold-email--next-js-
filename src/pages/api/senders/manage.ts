@@ -64,19 +64,27 @@ async function createSender(req: NextApiRequest, res: NextApiResponse) {
 
 async function deleteSender(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { username } = req.body;
+    const { username, email } = req.body;
 
-    if (!username) {
+    // If email is provided, extract username and domain from it
+    let senderUsername = username;
+    let senderDomain = azureConfig.emailDomain;
+    
+    if (email && email.includes('@')) {
+      const parts = email.split('@');
+      senderUsername = parts[0];
+      senderDomain = parts[1];
+    } else if (!username) {
       return res.status(400).json({ 
-        error: 'Username is required' 
+        error: 'Username or email is required' 
       });
     }
 
     await mgmtClient.senderUsernames.delete(
       azureConfig.resourceGroup,
       azureConfig.emailServiceName,
-      azureConfig.emailDomain,
-      username
+      senderDomain,
+      senderUsername
     );
 
     res.status(200).json({ 
