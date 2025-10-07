@@ -6,8 +6,10 @@ import SendersSection from '@/components/sections/SendersSection';
 import TemplatesSection from '@/components/sections/TemplatesSection';
 import RecipientsSection from '@/components/sections/RecipientsSection';
 import AnalyticsSection from '@/components/sections/AnalyticsSection';
+import UserManagementSection from '@/components/sections/UserManagementSection';
+import { withAuth } from '../lib/auth';
 
-export default function Home() {
+function Home() {
   const [activeSection, setActiveSection] = useState('compose');
   
   // Shared state for recipients across all components
@@ -72,6 +74,8 @@ export default function Home() {
           templates={templates}
           setTemplates={setTemplates}
         />;
+      case 'user-management':
+        return <UserManagementSection />;
       default:
         return <ComposeSection 
           recipients={recipients}
@@ -99,3 +103,5 @@ export default function Home() {
     </Layout>
   );
 }
+
+export default withAuth(Home);

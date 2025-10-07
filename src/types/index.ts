@@ -42,6 +42,33 @@ export interface CSVPreview {
   };
 }
 
+export interface User {
+  _id?: string;
+  email: string;
+  password: string;
+  name: string;
+  role: 'admin' | 'user';
+  isActive: boolean;
+  createdAt: Date;
+  lastLogin?: Date;
+}
+
+export interface AuthResponse {
+  success: boolean;
+  message: string;
+  user?: {
+    email: string;
+    name: string;
+    role: string;
+  };
+  token?: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
 export interface DeliverySettings {
   maxEmailsPerHour: number;
   delayBetweenEmails: number;
