@@ -568,7 +568,22 @@ async function sendEmailsAsync(
       if (i < recipients.length - 1) {
         const campaignStartTime = getCampaignStatus().startTime || Date.now();
         const delay = calculateHumanLikeDelay(i, stats.sent, recipients.length, sender, campaignStartTime);
+        
+        // Update campaign status with delay info for UI
+        const delaySeconds = Math.round(delay / 1000);
+        updateCampaignStatus({
+          nextEmailIn: delaySeconds,
+          lastDelay: delay
+        });
+        
+        console.log(`⏳ Waiting ${delaySeconds}s before next email (${delay}ms delay calculated)...`);
+        
         await sleep(delay);
+        
+        // Clear the countdown after delay
+        updateCampaignStatus({
+          nextEmailIn: null
+        });
       }
     }
 

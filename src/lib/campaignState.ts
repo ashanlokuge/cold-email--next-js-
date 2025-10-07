@@ -12,6 +12,8 @@ type CampaignStatus = {
   startTime: number | null;
   status: 'idle' | 'running' | 'paused' | 'stopped' | 'completed';
   campaignId?: string | null;
+  nextEmailIn?: number | null; // Seconds until next email
+  lastDelay?: number | null; // Last calculated delay in ms
 };
 
 // Global state that persists across API calls (like HTML/JS project)

@@ -12,6 +12,8 @@ interface CampaignStatus {
   duration?: number;
   subject?: string;
   status?: 'idle' | 'running' | 'paused' | 'stopped' | 'completed';
+  nextEmailIn?: number | null;
+  lastDelay?: number | null;
 }
 
 interface EmailDetail {
@@ -408,9 +410,21 @@ export default function AnalyticsSection() {
                   }
                 </span>
                 {campaignStatus.isRunning && (
-                  <div className="flex items-center space-x-2 mt-2">
-                    <div className="w-3 h-3 bg-success-500 rounded-full animate-pulse"></div>
-                    <span className="text-sm text-success-600 font-medium">Live Campaign</span>
+                  <div className="flex flex-col space-y-1 mt-2">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-3 h-3 bg-success-500 rounded-full animate-pulse"></div>
+                      <span className="text-sm text-success-600 font-medium">Live Campaign</span>
+                    </div>
+                    {campaignStatus.nextEmailIn && campaignStatus.nextEmailIn > 0 && (
+                      <div className="flex items-center space-x-2">
+                        <svg className="w-3 h-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span className="text-sm text-blue-600 font-medium">
+                          Next email in {campaignStatus.nextEmailIn}s
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -580,7 +594,7 @@ export default function AnalyticsSection() {
                        'Idle'}
                     </span>
                   </div>
-                  <div className="text-sm text-gray-600 mb-3">Campaign Status</div>
+                  <div className="text-sm text-gray-600">Campaign Status</div>
                 </div>
               </div>
             </div>
