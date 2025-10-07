@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { pauseCampaign, getCampaignStatus } from '@/lib/campaignState';
-import { getDb } from '@/lib/db';
+import { campaignRepository } from '@/lib/campaignRepository';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -14,9 +14,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Persist to DB if campaignId exists
     if (status.campaignId) {
       try {
-        const db = await getDb();
-        const campaigns = db.collection('campaigns');
-        await campaigns.updateOne({ _id: new (require('mongodb').ObjectId)(status.campaignId) }, { $set: { status: 'paused' } });
+        await campaignRepository.updateCampaignProgress(status.campaignId, {
+          status: 'paused'
+        });
       } catch (err) {
         console.warn('Failed to persist pause to DB:', err?.message || err);
       }

@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { stopCampaign, getCampaignStatus } from '@/lib/campaignState';
-import { getDb } from '@/lib/db';
+import { campaignRepository } from '@/lib/campaignRepository';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -13,9 +13,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     
     if (status.campaignId) {
       try {
-        const db = await getDb();
-        const campaigns = db.collection('campaigns');
-        await campaigns.updateOne({ _id: new (require('mongodb').ObjectId)(status.campaignId) }, { $set: { status: 'stopped', completedAt: new Date() } });
+        await campaignRepository.updateCampaignProgress(status.campaignId, {
+          status: 'stopped',
+          endTime: new Date()
+        });
       } catch (err) {
         console.warn('Failed to persist stop to DB:', err?.message || err);
       }

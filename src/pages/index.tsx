@@ -7,6 +7,7 @@ import TemplatesSection from '@/components/sections/TemplatesSection';
 import RecipientsSection from '@/components/sections/RecipientsSection';
 import AnalyticsSection from '@/components/sections/AnalyticsSection';
 import UserManagementSection from '@/components/sections/UserManagementSection';
+import CampaignsHistorySection from '@/components/sections/CampaignsHistorySection';
 import { withAuth } from '../lib/auth';
 
 function Home() {
@@ -59,6 +60,8 @@ function Home() {
         />;
       case 'analytics':
         return <AnalyticsSection />;
+      case 'campaigns':
+        return <CampaignsHistorySection />;
       case 'recipients':
         return <RecipientsSection 
           recipients={recipients}

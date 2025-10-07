@@ -10,6 +10,8 @@ import {
   completeCampaign
 } from '@/lib/campaignState';
 import { getDb } from '@/lib/db';
+import { campaignRepository } from '@/lib/campaignRepository';
+import jwt from 'jsonwebtoken';
 
 // API route configuration
 export const config = {
@@ -85,6 +87,30 @@ export default async function handler(
   }
 
   try {
+    // Get user from JWT token
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    let userId = 'anonymous';
+    let userEmail = 'anonymous@example.com';
+    
+    console.log('🔐 Authorization header:', req.headers.authorization ? 'Present' : 'Missing');
+    console.log('🔐 Token extracted:', token ? 'Yes' : 'No');
+    
+    if (token) {
+      try {
+        const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+        const decoded = jwt.verify(token, JWT_SECRET) as any;
+        console.log('🔓 Token decoded successfully:', decoded);
+        userId = decoded.userId;
+        userEmail = decoded.email || decoded.userEmail || 'unknown@example.com';
+        console.log('✅ User authenticated:', userEmail, userId);
+      } catch (err) {
+        console.error('❌ Token verification failed:', err.message);
+        console.warn('⚠️ Using anonymous user due to invalid token');
+      }
+    } else {
+      console.warn('⚠️ No token provided, using anonymous user');
+    }
+
     const { campaignName, subject, text, recipients: rawRecipients, selectedSenders } = req.body;
 
     if (!campaignName || !subject || !text || !rawRecipients) {
@@ -118,33 +144,22 @@ export default async function handler(
       });
     }
 
-    // Persist campaign to MongoDB (if configured)
+    // Create campaign in MongoDB using the new repository
     let campaignId: string | null = null;
     try {
-      const db = await getDb();
-      const campaignsColl = db.collection('campaigns');
-      const now = new Date();
-      const insertResult = await campaignsColl.insertOne({
-        name: campaignName,
+      campaignId = await campaignRepository.createCampaign({
+        userId,
+        userEmail,
+        campaignName,
         subject,
         body: text,
-        status: 'running',
-        settings: {
-          ratePerMinute: process.env.RATE_PER_MINUTE ? Number(process.env.RATE_PER_MINUTE) : 60,
-          jitterPercent: process.env.JITTER_PCT ? Number(process.env.JITTER_PCT) : 20,
-          maxRetries: process.env.MAX_RETRIES ? Number(process.env.MAX_RETRIES) : 3
-        },
-        selectedSenders: selectedSenders || [],
-        totals: { totalRecipients: recipients.length, sent: 0, success: 0, failed: 0 },
-        createdAt: now,
-        startedAt: now,
-        userId: 'seed-user'
+        totalRecipients: recipients.length,
+        selectedSenders: selectedSenders || senders.slice(0, 3)
       });
-
-      campaignId = insertResult.insertedId.toString();
+      console.log('✅ Campaign created in MongoDB:', campaignId);
     } catch (dbError) {
-      console.warn('MongoDB not available or failed to insert campaign:', dbError.message || dbError);
-      campaignId = null;
+      console.warn('Failed to create campaign in MongoDB:', dbError);
+      // Continue anyway - campaign will run but won't be persisted
     }
 
     // Initialize campaign status
@@ -476,19 +491,15 @@ async function sendEmailsAsync(
         // Persist email log to MongoDB if campaignId is present
         if (campaignId) {
           try {
-            const db = await getDb();
-            const emailLogs = db.collection('emailLogs');
-            await emailLogs.insertOne({
-              campaignId,
-              recipientEmail: recipient.email,
-              senderEmail: sender,
-              subject,
+            await campaignRepository.addEmailLog(campaignId, {
+              email: recipient.email,
+              name: recipient.name,
               status: 'sent',
               timestamp: new Date(),
-              messageId: null
+              sender: sender
             });
           } catch (err) {
-            console.warn('Failed to persist email log:', err?.message || err);
+            console.warn('Failed to persist email log:', err);
           }
         }
 
@@ -505,17 +516,13 @@ async function sendEmailsAsync(
         // Persist periodic totals to campaigns collection
         if (campaignId && (stats.sent % 10 === 0 || stats.sent === recipients.length)) {
           try {
-            const db = await getDb();
-            const campaignsColl = db.collection('campaigns');
-            await campaignsColl.updateOne({ _id: new (require('mongodb').ObjectId)(campaignId) }, {
-              $set: {
-                'totals.sent': stats.sent,
-                'totals.success': stats.successful,
-                'totals.failed': stats.failed
-              }
+            await campaignRepository.updateCampaignProgress(campaignId, {
+              sentCount: stats.sent,
+              successCount: stats.successful,
+              failedCount: stats.failed
             });
           } catch (err) {
-            console.warn('Failed to persist campaign totals:', err?.message || err);
+            console.warn('Failed to persist campaign totals:', err);
           }
         }
 
@@ -534,22 +541,19 @@ async function sendEmailsAsync(
           sender: sender
         });
 
-        // Persist failure to emailLogs in MongoDB
+        // Persist failure to MongoDB
         if (campaignId) {
           try {
-            const db = await getDb();
-            const emailLogs = db.collection('emailLogs');
-            await emailLogs.insertOne({
-              campaignId,
-              recipientEmail: recipient.email,
-              senderEmail: sender,
-              subject,
+            await campaignRepository.addEmailLog(campaignId, {
+              email: recipient.email,
+              name: recipient.name,
               status: 'failed',
               timestamp: new Date(),
-              errorMessage: error?.message || null
+              error: error.message || 'Unknown error',
+              sender: sender
             });
           } catch (err) {
-            console.warn('Failed to persist failed email log:', err?.message || err);
+            console.warn('Failed to persist error log:', err);
           }
         }
 
@@ -599,22 +603,19 @@ async function sendEmailsAsync(
 
     // Mark campaign as completed
     completeCampaign();
+    
     // Persist final campaign status
     if (campaignId) {
       try {
-        const db = await getDb();
-        const campaignsColl = db.collection('campaigns');
-        await campaignsColl.updateOne({ _id: new (require('mongodb').ObjectId)(campaignId) }, {
-          $set: {
-            status: 'completed',
-            'totals.sent': stats.sent,
-            'totals.success': stats.successful,
-            'totals.failed': stats.failed,
-            completedAt: new Date()
-          }
+        await campaignRepository.updateCampaignProgress(campaignId, {
+          status: 'completed',
+          sentCount: stats.sent,
+          successCount: stats.successful,
+          failedCount: stats.failed,
+          endTime: new Date()
         });
       } catch (err) {
-        console.warn('Failed to persist final campaign status:', err?.message || err);
+        console.warn('Failed to persist final campaign status:', err);
       }
     }
 

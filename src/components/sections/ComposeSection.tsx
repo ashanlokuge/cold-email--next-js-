@@ -78,10 +78,15 @@ export default function ComposeSection({ recipients, senders, templates, campaig
 
     try {
       console.log('📡 Sending request to /api/campaigns/send...');
+      
+      // Get JWT token from localStorage
+      const token = localStorage.getItem('token');
+      
       const response = await fetch('/api/campaigns/send', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
           campaignName,

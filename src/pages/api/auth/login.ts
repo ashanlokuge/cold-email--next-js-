@@ -66,7 +66,7 @@ export default async function handler(
     // Generate JWT token
     const token = jwt.sign(
       { 
-        userId: user._id,
+        userId: user._id.toHexString(),  // Convert ObjectId to string
         email: user.email,
         role: user.role 
       },
