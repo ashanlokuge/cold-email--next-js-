@@ -10,6 +10,38 @@ export interface Sender {
   domain: string;
 }
 
+export interface TimezoneConfig {
+  targetTimezone: string;
+  // Time window settings
+  sendTimeStart: number;     // Hour (0-23) - e.g., 9 for 9 AM
+  sendTimeEnd: number;        // Hour (0-23) - e.g., 17 for 5 PM
+  // Day selection (true = send on this day)
+  sendDays: {
+    sunday: boolean;
+    monday: boolean;
+    tuesday: boolean;
+    wednesday: boolean;
+    thursday: boolean;
+    friday: boolean;
+    saturday: boolean;
+  };
+  // Legacy fields for backward compatibility
+  businessHourStart: number;
+  businessHourEnd: number;
+  respectBusinessHours: boolean;
+  respectWeekends: boolean;
+  allowNightSending: boolean;
+}
+
+export interface CampaignFormData {
+  campaignName: string;
+  subject: string;
+  text: string;
+  recipients: Recipient[];
+  selectedSenders: string[];
+  timezoneConfig?: TimezoneConfig | null;
+}
+
 export interface CampaignStatus {
   isRunning: boolean;
   campaignName: string;
@@ -19,6 +51,7 @@ export interface CampaignStatus {
   total: number;
   completed: boolean;
   startTime: number | null;
+  timezoneConfig?: TimezoneConfig | null;
 }
 
 export interface EmailDetail {

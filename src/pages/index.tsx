@@ -9,6 +9,7 @@ import AnalyticsSection from '@/components/sections/AnalyticsSection';
 import UserManagementSection from '@/components/sections/UserManagementSection';
 import CampaignsHistorySection from '@/components/sections/CampaignsHistorySection';
 import { withAuth } from '../lib/auth';
+import type { TimezoneConfig } from '@/types';
 
 function Home() {
   const [activeSection, setActiveSection] = useState('compose');
@@ -23,11 +24,18 @@ function Home() {
   const [templates, setTemplates] = useState([]);
 
   // Persistent campaign form state with localStorage
-  const [campaignFormData, setCampaignFormData] = useState({
+  const [campaignFormData, setCampaignFormData] = useState<{
+    campaignName: string;
+    subject: string;
+    body: string;
+    selectedSenders: string[];
+    timezoneConfig?: TimezoneConfig | null;
+  }>({
     campaignName: '',
     subject: '',
     body: '',
-    selectedSenders: [] as string[]
+    selectedSenders: [],
+    timezoneConfig: null
   });
 
   // Load form data from localStorage on component mount

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { personalizeContent, expandSpintax } from '@/lib/utils';
-import type { Recipient } from '@/types';
+import type { Recipient, TimezoneConfig } from '@/types';
+import { TIMEZONE_PRESETS, getCurrentHourInTimezone, getCurrentDayInTimezone } from '@/lib/timezoneConfig';
 
 interface ComposeSectionProps {
   recipients: Recipient[];
@@ -11,22 +12,25 @@ interface ComposeSectionProps {
     subject: string;
     body: string;
     selectedSenders: string[];
+    timezoneConfig?: TimezoneConfig | null;
   };
   setCampaignFormData: React.Dispatch<React.SetStateAction<{
     campaignName: string;
     subject: string;
     body: string;
     selectedSenders: string[];
+    timezoneConfig?: TimezoneConfig | null;
   }>>;
 }
 
 export default function ComposeSection({ recipients, senders, templates, campaignFormData, setCampaignFormData }: ComposeSectionProps) {
   // Use persistent form data from parent component
-  const { campaignName, subject, body, selectedSenders } = campaignFormData;
+  const { campaignName, subject, body, selectedSenders, timezoneConfig } = campaignFormData;
   
   // Local state for UI-only data
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState('');
+  const [currentTimeInTimezone, setCurrentTimeInTimezone] = useState<string>('');
 
   // Helper functions to update persistent form data
   const setCampaignName = (value: string) => {
@@ -45,16 +49,45 @@ export default function ComposeSection({ recipients, senders, templates, campaig
     setCampaignFormData(prev => ({ ...prev, selectedSenders: value }));
   };
 
+  const setTimezoneConfig = (value: TimezoneConfig | null) => {
+    setCampaignFormData(prev => ({ ...prev, timezoneConfig: value }));
+  };
+
   const clearForm = () => {
     setCampaignFormData({
       campaignName: '',
       subject: '',
       body: '',
-      selectedSenders: []
+      selectedSenders: [],
+      timezoneConfig: null
     });
     setStatus('Form cleared');
     setTimeout(() => setStatus(''), 2000);
   };
+
+  // Update current time in selected timezone every minute
+  useEffect(() => {
+    const updateTimezoneTime = () => {
+      if (timezoneConfig) {
+        const now = new Date();
+        const formatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: timezoneConfig.targetTimezone,
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric'
+        });
+        setCurrentTimeInTimezone(formatter.format(now));
+      }
+    };
+
+    updateTimezoneTime();
+    const interval = setInterval(updateTimezoneTime, 60000); // Update every minute
+
+    return () => clearInterval(interval);
+  }, [timezoneConfig]);
 
   // Preview states
   const [previewRecipient, setPreviewRecipient] = useState<Recipient>({ 
@@ -93,7 +126,8 @@ export default function ComposeSection({ recipients, senders, templates, campaig
           subject,
           text: body,
           recipients,
-          selectedSenders: selectedSenders
+          selectedSenders: selectedSenders,
+          timezoneConfig: timezoneConfig
         }),
       });
 
@@ -256,6 +290,165 @@ export default function ComposeSection({ recipients, senders, templates, campaig
                         +{selectedSenders.length - 3} more
                       </span>
                     )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Schedule Settings */}
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-gray-700">
+                📅 Schedule Settings
+              </label>
+              <select
+                value={timezoneConfig?.targetTimezone || ''}
+                onChange={(e) => {
+                  if (e.target.value === '') {
+                    setTimezoneConfig(null);
+                  } else {
+                    const preset = Object.values(TIMEZONE_PRESETS).find(
+                      p => p.targetTimezone === e.target.value
+                    );
+                    if (preset) {
+                      setTimezoneConfig({...preset});
+                    }
+                  }
+                }}
+                className="w-full px-4 py-3 bg-white border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-300 shadow-sm"
+              >
+                <option value="">No schedule (send anytime)</option>
+                <option value={TIMEZONE_PRESETS.AUSTRALIA_SYDNEY.targetTimezone}>🇦🇺 Australia/Sydney (AEDT/AEST)</option>
+                <option value={TIMEZONE_PRESETS.AUSTRALIA_MELBOURNE.targetTimezone}>🇦🇺 Australia/Melbourne (AEDT/AEST)</option>
+                <option value={TIMEZONE_PRESETS.SRI_LANKA.targetTimezone}>🇱🇰 Asia/Colombo (Sri Lanka)</option>
+                <option value={TIMEZONE_PRESETS.SINGAPORE.targetTimezone}>🇸🇬 Asia/Singapore</option>
+                <option value={TIMEZONE_PRESETS.DUBAI.targetTimezone}>🇦� Asia/Dubai (UAE)</option>
+                <option value={TIMEZONE_PRESETS.LONDON.targetTimezone}>🇬🇧 Europe/London (GMT/BST)</option>
+                <option value={TIMEZONE_PRESETS.NEW_YORK.targetTimezone}>🇺🇸 America/New_York (EST/EDT)</option>
+                <option value={TIMEZONE_PRESETS.LOS_ANGELES.targetTimezone}>🇺🇸 America/Los_Angeles (PST/PDT)</option>
+              </select>
+              
+              {timezoneConfig && (
+                <div className="bg-white border border-gray-300 rounded-lg p-6 space-y-5 mt-4">
+                  {/* Current Time Display */}
+                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-semibold text-gray-700">Current Time in {timezoneConfig.targetTimezone.split('/')[1]}</span>
+                      <span className="text-base font-mono font-semibold text-gray-900">{currentTimeInTimezone}</span>
+                    </div>
+                  </div>
+
+                  {/* Send These Days */}
+                  <div className="space-y-3">
+                    <label className="block text-sm font-semibold text-gray-700">
+                      Send these days
+                    </label>
+                    <div className="grid grid-cols-1 gap-2">
+                      {[
+                        { key: 'sunday', label: 'Sunday' },
+                        { key: 'monday', label: 'Monday' },
+                        { key: 'tuesday', label: 'Tuesday' },
+                        { key: 'wednesday', label: 'Wednesday' },
+                        { key: 'thursday', label: 'Thursday' },
+                        { key: 'friday', label: 'Friday' },
+                        { key: 'saturday', label: 'Saturday' }
+                      ].map((day) => {
+                        const isSelected = timezoneConfig?.sendDays?.[day.key as keyof typeof timezoneConfig.sendDays];
+                        return (
+                          <label
+                            key={day.key}
+                            className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded-lg transition-colors"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected || false}
+                              onChange={(e) => {
+                                if (!timezoneConfig) return;
+                                setTimezoneConfig({
+                                  ...timezoneConfig,
+                                  sendDays: {
+                                    ...timezoneConfig.sendDays,
+                                    [day.key]: e.target.checked
+                                  }
+                                });
+                              }}
+                              className="w-5 h-5 text-blue-600 bg-white border-2 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                            />
+                            <span className="text-sm font-medium text-gray-700">{day.label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Time Period */}
+                  <div className="space-y-3">
+                    <label className="block text-sm font-semibold text-gray-700">
+                      Time Period Between Sequences
+                    </label>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="block text-xs font-medium text-gray-600">From</label>
+                        <select
+                          value={timezoneConfig.sendTimeStart}
+                          onChange={(e) => setTimezoneConfig({
+                            ...timezoneConfig,
+                            sendTimeStart: parseInt(e.target.value),
+                            businessHourStart: parseInt(e.target.value)
+                          })}
+                          className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-700"
+                        >
+                          {Array.from({ length: 24 }, (_, i) => i).map(hour => (
+                            <option key={hour} value={hour}>
+                              {hour.toString().padStart(2, '0')}:00
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="block text-xs font-medium text-gray-600">To</label>
+                        <select
+                          value={timezoneConfig.sendTimeEnd}
+                          onChange={(e) => setTimezoneConfig({
+                            ...timezoneConfig,
+                            sendTimeEnd: parseInt(e.target.value),
+                            businessHourEnd: parseInt(e.target.value)
+                          })}
+                          className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-700"
+                        >
+                          {Array.from({ length: 24 }, (_, i) => i).map(hour => (
+                            <option key={hour} value={hour}>
+                              {hour.toString().padStart(2, '0')}:00
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Active Window Display */}
+                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-700">
+                          Active window: <span className="font-semibold">
+                            {timezoneConfig.sendTimeStart.toString().padStart(2, '0')}:00 - 
+                            {timezoneConfig.sendTimeEnd.toString().padStart(2, '0')}:00
+                          </span>
+                        </span>
+                        <span className="text-xs text-gray-500 bg-white px-2 py-1 rounded border border-gray-300">
+                          {timezoneConfig.sendTimeEnd - timezoneConfig.sendTimeStart} hours
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Summary Badge */}
+                  <div className="bg-gray-50 rounded-lg p-3 border border-gray-300">
+                    <div className="text-sm text-gray-700">
+                      <span className="font-medium">Schedule:</span> Sending on selected days from{' '}
+                      {timezoneConfig.sendTimeStart.toString().padStart(2, '0')}:00 to{' '}
+                      {timezoneConfig.sendTimeEnd.toString().padStart(2, '0')}:00{' '}
+                      ({timezoneConfig.targetTimezone})
+                    </div>
                   </div>
                 </div>
               )}

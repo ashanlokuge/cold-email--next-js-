@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { emailClient, mgmtClient, config as azureConfig } from '@/lib/azure';
 import { sanitizeRecipients, personalizeContent, calculateHumanLikeDelay, sleep, isRetryable } from '@/lib/utils';
-import type { Recipient, EmailDetail } from '@/types';
+import type { Recipient, EmailDetail, TimezoneConfig } from '@/types';
 import { 
   updateCampaignStatus, 
   resetCampaignStatus, 
@@ -11,6 +11,15 @@ import {
 } from '@/lib/campaignState';
 import { getDb } from '@/lib/db';
 import { campaignRepository } from '@/lib/campaignRepository';
+import { 
+  getTimezoneStatusMessage, 
+  isBusinessHours, 
+  getMillisecondsUntilBusinessHours,
+  isSendingAllowedToday,
+  isWithinSendingWindow,
+  getCurrentHourInTimezone,
+  getCurrentDayInTimezone
+} from '@/lib/timezoneConfig';
 import jwt from 'jsonwebtoken';
 
 // API route configuration
@@ -111,7 +120,7 @@ export default async function handler(
       console.warn('⚠️ No token provided, using anonymous user');
     }
 
-    const { campaignName, subject, text, recipients: rawRecipients, selectedSenders } = req.body;
+    const { campaignName, subject, text, recipients: rawRecipients, selectedSenders, timezoneConfig } = req.body;
 
     if (!campaignName || !subject || !text || !rawRecipients) {
       return res.status(400).json({ 
@@ -125,6 +134,13 @@ export default async function handler(
       return res.status(400).json({ 
         error: 'No valid recipients found' 
       });
+    }
+
+    // Log timezone configuration if provided
+    if (timezoneConfig) {
+      console.log('🌍 Timezone configuration:', timezoneConfig);
+      console.log(`📍 Target timezone: ${timezoneConfig.targetTimezone}`);
+      console.log(`🕐 Business hours: ${timezoneConfig.businessHourStart}:00 - ${timezoneConfig.businessHourEnd}:00`);
     }
 
     // Check if campaign is already running
@@ -178,7 +194,7 @@ export default async function handler(
     });
 
     // Start sending emails asynchronously
-    sendEmailsAsync(campaignName, subject, text, recipients, senders, selectedSenders, campaignId);
+    sendEmailsAsync(campaignName, subject, text, recipients, senders, selectedSenders, campaignId, timezoneConfig);
 
     return res.status(200).json({ 
       success: true, 
@@ -202,7 +218,8 @@ async function sendEmailsAsync(
   recipients: Recipient[], 
   senders: any[],
   selectedSenders?: string[],
-  campaignId?: string | null
+  campaignId?: string | null,
+  timezoneConfig?: TimezoneConfig | null
 ) {
   try {
     // Filter senders if specific ones are selected
@@ -219,6 +236,24 @@ async function sendEmailsAsync(
     console.log(`📧 Total emails to send: ${recipients.length}`);
     console.log(`👥 Available senders: ${availableSenders.length}`);
     console.log(`📋 Subject: "${subject}"`);
+
+    // Log timezone information if configured
+    if (timezoneConfig) {
+      const tzStatus = getTimezoneStatusMessage(timezoneConfig);
+      console.log(`🌍 Timezone: ${timezoneConfig.targetTimezone}`);
+      console.log(`📍 Status: ${tzStatus}`);
+      
+      // Check if we need to wait for business hours
+      if (timezoneConfig.respectBusinessHours && !isBusinessHours(timezoneConfig)) {
+        const waitMs = getMillisecondsUntilBusinessHours(timezoneConfig);
+        if (waitMs > 0) {
+          const waitMinutes = Math.round(waitMs / 60000);
+          console.log(`⏰ Waiting ${waitMinutes} minutes until business hours in ${timezoneConfig.targetTimezone}...`);
+          await sleep(waitMs);
+          console.log(`✅ Business hours started in ${timezoneConfig.targetTimezone}. Resuming campaign...`);
+        }
+      }
+    }
 
     const stats = {
       successful: 0,
@@ -452,13 +487,14 @@ async function sendEmailsAsync(
       
       try {
         // Personalize content for each recipient with unique index
+        const personalizedSubject = personalizeContent(subject, recipient, i, sender);
         const personalizedText = personalizeContent(text, recipient, i, sender);
         
         // Create email message
         const emailMessage = {
           senderAddress: sender,
           content: {
-            subject: subject,
+            subject: personalizedSubject,
             plainText: personalizedText,
           },
           recipients: {
@@ -570,8 +606,51 @@ async function sendEmailsAsync(
 
       // Human-like delay between emails
       if (i < recipients.length - 1) {
+        // CHECK: Pause campaign if outside scheduled time/days
+        if (timezoneConfig) {
+          const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+          const currentDay = getCurrentDayInTimezone(timezoneConfig.targetTimezone);
+          const currentHour = getCurrentHourInTimezone(timezoneConfig.targetTimezone);
+          
+          // Check if we should pause (wrong day or wrong time)
+          while (!isSendingAllowedToday(timezoneConfig) || !isWithinSendingWindow(timezoneConfig)) {
+            const pauseReason = !isSendingAllowedToday(timezoneConfig) 
+              ? `Today is ${dayNames[currentDay]} (not in selected days)`
+              : `Current time is ${currentHour}:00 (outside ${timezoneConfig.sendTimeStart}:00-${timezoneConfig.sendTimeEnd}:00)`;
+            
+            console.log(`\n⏸️  CAMPAIGN PAUSED: ${pauseReason}`);
+            console.log(`🕐 Target timezone: ${timezoneConfig.targetTimezone}`);
+            console.log(`⏳ Waiting 5 minutes before checking again...`);
+            
+            updateCampaignStatus({
+              status: 'paused',
+              pauseReason: pauseReason
+            });
+            
+            // Wait 5 minutes and check again
+            await sleep(5 * 60 * 1000);
+            
+            // Re-check current time and day
+            const newDay = getCurrentDayInTimezone(timezoneConfig.targetTimezone);
+            const newHour = getCurrentHourInTimezone(timezoneConfig.targetTimezone);
+            
+            // If still outside window, continue loop
+            if (isSendingAllowedToday(timezoneConfig) && isWithinSendingWindow(timezoneConfig)) {
+              console.log(`\n✅ CAMPAIGN RESUMED: Now in scheduled window!`);
+              console.log(`📅 Day: ${dayNames[newDay]}`);
+              console.log(`🕐 Time: ${newHour}:00 (${timezoneConfig.targetTimezone})`);
+              
+              updateCampaignStatus({
+                status: 'running',
+                pauseReason: null
+              });
+              break;
+            }
+          }
+        }
+        
         const campaignStartTime = getCampaignStatus().startTime || Date.now();
-        const delay = calculateHumanLikeDelay(i, stats.sent, recipients.length, sender, campaignStartTime);
+        const delay = calculateHumanLikeDelay(i, stats.sent, recipients.length, sender, campaignStartTime, timezoneConfig);
         
         // Update campaign status with delay info for UI
         const delaySeconds = Math.round(delay / 1000);

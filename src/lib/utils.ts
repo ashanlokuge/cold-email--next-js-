@@ -1,8 +1,14 @@
 import { Recipient } from '@/types';
+import { TimezoneConfig, getTimezoneDelayMultiplier, getCurrentHourInTimezone, isWeekend } from './timezoneConfig';
 
 // Spintax expansion with seeded randomization
 export function expandSpintax(text: string, seed: number | null = null): string {
-  if (!text || typeof text !== 'string') return text;
+  console.log('🔧 expandSpintax START:', { textLength: text?.length, seed, hasSpintax: /{[^}]*\|[^}]*}/.test(text || '') });
+  
+  if (!text || typeof text !== 'string') {
+    console.log('❌ expandSpintax ABORT: Invalid input');
+    return text;
+  }
   
   // Set up seeded random if provided
   let random = Math.random;
@@ -20,15 +26,22 @@ export function expandSpintax(text: string, seed: number | null = null): string 
   const maxIterations = 100; // Prevent infinite loops
   
   while (/{[^}]*\|[^}]*}/.test(result) && iterations < maxIterations) {
-    result = result.replace(/{([^}]+)}/g, (match, content) => {
+    const beforeReplace = result;
+    // Process each spintax block one at a time to ensure different random values
+    result = result.replace(/{([^}]+)}/, (match, content) => {
       const options = content.split('|').map((s: string) => s.trim());
       if (options.length <= 1) return match;
       
+      // Get a NEW random value for each spintax block
       const randomIndex = Math.floor(random() * options.length);
-      return options[randomIndex] || options[0];
+      const chosen = options[randomIndex] || options[0];
+      console.log(`  ✓ Replaced "${match}" → "${chosen}" (index ${randomIndex}/${options.length})`);
+      return chosen;
     });
     iterations++;
   }
+  
+  console.log('✅ expandSpintax END:', { iterations, stillHasSpintax: /{[^}]*\|[^}]*}/.test(result) });
   
   return result;
 }
@@ -48,7 +61,19 @@ export function personalizeContent(
   const uniqueString = `${recipient.email}_${recipientIndex}_${emailDomain}_${contentHash}`;
   const seed = simpleHash(uniqueString);
   
+  console.log('🔍 PersonalizeContent called:', {
+    recipient: recipient.email,
+    hasSpintax: /{[^}]*\|[^}]*}/.test(content),
+    seed: seed,
+    contentPreview: content.substring(0, 100)
+  });
+  
   let personalized = expandSpintax(content, seed);
+  
+  console.log('✅ After spintax expansion:', {
+    stillHasSpintax: /{[^}]*\|[^}]*}/.test(personalized),
+    result: personalized.substring(0, 100)
+  });
   
   // Sender name mapping
   const senderNames: { [key: string]: string } = {
@@ -162,7 +187,8 @@ export function calculateHumanLikeDelay(
   emailsSent: number,
   totalEmails: number,
   senderEmail: string,
-  campaignStartTime: number
+  campaignStartTime: number,
+  timezoneConfig?: TimezoneConfig | null
 ): number {
   const campaignElapsed = Date.now() - campaignStartTime;
   const progress = emailIndex / totalEmails;
@@ -195,19 +221,26 @@ export function calculateHumanLikeDelay(
     }
   }
   
-  // WORKDAY SIMULATION: Adjust timing based on "time of day"
-  const simulatedHour = (campaignElapsed / 3600000) % 24; // Simulate 24-hour cycle
+  // TIMEZONE-AWARE WORKDAY SIMULATION
   let workdayMultiplier = 1.0;
   
-  if (simulatedHour >= 9 && simulatedHour <= 17) {
-    // Business hours: Faster pace
-    workdayMultiplier = 0.7;
-  } else if (simulatedHour >= 18 && simulatedHour <= 22) {
-    // Evening: Moderate pace
-    workdayMultiplier = 1.0;
+  if (timezoneConfig) {
+    // Use target timezone's time instead of local time
+    workdayMultiplier = getTimezoneDelayMultiplier(timezoneConfig);
   } else {
-    // Night/early morning: Slower pace
-    workdayMultiplier = 1.5;
+    // Original workday simulation based on elapsed time
+    const simulatedHour = (campaignElapsed / 3600000) % 24; // Simulate 24-hour cycle
+    
+    if (simulatedHour >= 9 && simulatedHour <= 17) {
+      // Business hours: Faster pace
+      workdayMultiplier = 0.7;
+    } else if (simulatedHour >= 18 && simulatedHour <= 22) {
+      // Evening: Moderate pace
+      workdayMultiplier = 1.0;
+    } else {
+      // Night/early morning: Slower pace
+      workdayMultiplier = 1.5;
+    }
   }
   
   // PROGRESSIVE SLOWDOWN: Gradually increase delays as campaign progresses

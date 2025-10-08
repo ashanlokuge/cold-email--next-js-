@@ -14,6 +14,7 @@ type CampaignStatus = {
   campaignId?: string | null;
   nextEmailIn?: number | null; // Seconds until next email
   lastDelay?: number | null; // Last calculated delay in ms
+  pauseReason?: string | null; // Reason for pause (timezone/schedule)
 };
 
 // Global state that persists across API calls (like HTML/JS project)
