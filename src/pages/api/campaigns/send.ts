@@ -32,7 +32,7 @@ export const config = {
 }
 
 async function fetchSenders() {
-  const senders: string[] = [];
+  const senders: Array<{ email: string; displayName: string }> = [];
 
   try {
     // Get all domains first
@@ -53,12 +53,15 @@ async function fetchSenders() {
       domains.push(azureConfig.emailDomain);
     }
 
-    // Get senders from all domains (exactly like HTML/JS project)
+    // Get senders from all domains with displayName
     for (const domainName of domains) {
       try {
         for await (const s of (mgmtClient as any).senderUsernames.listByDomains(azureConfig.resourceGroup, azureConfig.emailServiceName, domainName)) {
           if (s?.name) {
-            senders.push(`${s.name}@${domainName}`);
+            senders.push({
+              email: `${s.name}@${domainName}`,
+              displayName: s.displayName || s.name || 'The Team'
+            });
           }
         }
       } catch (domainError) {
@@ -77,7 +80,10 @@ async function fetchSenders() {
     // Fallback to the original single-domain approach
     try {
       for await (const s of (mgmtClient as any).senderUsernames.listByDomains(azureConfig.resourceGroup, azureConfig.emailServiceName, azureConfig.emailDomain)) {
-        if (s?.name) senders.push(`${s.name}@${azureConfig.emailDomain}`);
+        if (s?.name) senders.push({
+          email: `${s.name}@${azureConfig.emailDomain}`,
+          displayName: s.displayName || s.name || 'The Team'
+        });
       }
     } catch (fallbackError) {
       console.error('Fallback also failed:', fallbackError.message);
@@ -170,7 +176,7 @@ export default async function handler(
         subject,
         body: text,
         totalRecipients: recipients.length,
-        selectedSenders: selectedSenders || senders.slice(0, 3)
+        selectedSenders: selectedSenders || senders.slice(0, 3).map(s => s.email)
       });
       console.log('✅ Campaign created in MongoDB:', campaignId);
     } catch (dbError) {
@@ -216,7 +222,7 @@ async function sendEmailsAsync(
   subject: string, 
   text: string, 
   recipients: Recipient[], 
-  senders: any[],
+  senders: Array<{ email: string; displayName: string }>,
   selectedSenders?: string[],
   campaignId?: string | null,
   timezoneConfig?: TimezoneConfig | null
@@ -224,7 +230,7 @@ async function sendEmailsAsync(
   try {
     // Filter senders if specific ones are selected
     const availableSenders = selectedSenders && selectedSenders.length > 0 
-      ? senders.filter(sender => selectedSenders.includes(sender))
+      ? senders.filter(sender => selectedSenders.includes(sender.email))
       : senders;
 
     if (availableSenders.length === 0) {
@@ -263,7 +269,7 @@ async function sendEmailsAsync(
 
     const senderStats: Record<string, { sent: number; successful: number; failed: number; assigned: number }> = {};
     availableSenders.forEach(sender => {
-      senderStats[sender] = { sent: 0, successful: 0, failed: 0, assigned: 0 };
+      senderStats[sender.email] = { sent: 0, successful: 0, failed: 0, assigned: 0 };
     });
 
     // COMPLETE DETERMINISTIC SENDER SELECTION ALGORITHM (from HTML/JS project)
@@ -273,12 +279,12 @@ async function sendEmailsAsync(
     const domainStats: Record<string, { senders: number; targetEmails: number; currentEmails: number }> = {};
     
     availableSenders.forEach(sender => {
-      const domain = sender.split('@')[1];
+      const domain = sender.email.split('@')[1];
       if (!sendersByDomain[domain]) {
         sendersByDomain[domain] = [];
         domainStats[domain] = { senders: 0, targetEmails: 0, currentEmails: 0 };
       }
-      sendersByDomain[domain].push(sender);
+      sendersByDomain[domain].push(sender.email);
       domainStats[domain].senders++;
     });
     
@@ -320,8 +326,8 @@ async function sendEmailsAsync(
     for (let i = 0; i < availableSenders.length; i++) {
       const emailsForThisSender = baseEmailsPerSender + (remainderCounter < remainderEmails ? 1 : 0);
       distributionPlan.push({
-        sender: availableSenders[i],
-        domain: availableSenders[i].split('@')[1],
+        sender: availableSenders[i].email,
+        domain: availableSenders[i].email.split('@')[1],
         targetCount: emailsForThisSender,
         currentCount: 0
       });
@@ -399,7 +405,7 @@ async function sendEmailsAsync(
       
       // Final fallback: If all senders are at capacity, use round-robin
       if (!selectedSender) {
-        selectedSender = availableSenders[emailIndex % availableSenders.length];
+        selectedSender = availableSenders[emailIndex % availableSenders.length].email;
         senderStats[selectedSender].assigned++;
         console.log(`⚠️ Fallback to round-robin: ${selectedSender} at position ${emailIndex}`);
       }
@@ -475,24 +481,28 @@ async function sendEmailsAsync(
       }
       
       const recipient = recipients[i];
-      const sender = senderSequence[i]; // Use pre-calculated sequence instead of simple round-robin
+      const senderEmail = senderSequence[i]; // Use pre-calculated sequence instead of simple round-robin
+      
+      // Get sender object to access displayName
+      const senderObj = availableSenders.find(s => s.email === senderEmail);
+      const senderDisplayName = senderObj?.displayName || 'The Team';
       
       // Track sender usage
-      senderStats[sender].sent++;
+      senderStats[senderEmail].sent++;
       
       // Check if this is a consecutive send for better logging
-      const isConsecutive = i > 0 && senderSequence[i - 1] === sender;
+      const isConsecutive = i > 0 && senderSequence[i - 1] === senderEmail;
       const consecutiveWarning = isConsecutive ? " ⚠️ CONSECUTIVE" : "";
-      console.log(`📤 ${i + 1}/${recipients.length} - Sending from: ${sender} [Sequence: ${i}]${consecutiveWarning}`);
+      console.log(`📤 ${i + 1}/${recipients.length} - Sending from: ${senderEmail} (${senderDisplayName}) [Sequence: ${i}]${consecutiveWarning}`);
       
       try {
-        // Personalize content for each recipient with unique index
-        const personalizedSubject = personalizeContent(subject, recipient, i, sender);
-        const personalizedText = personalizeContent(text, recipient, i, sender);
+        // Personalize content for each recipient with unique index and sender display name
+        const personalizedSubject = personalizeContent(subject, recipient, i, senderEmail, senderDisplayName);
+        const personalizedText = personalizeContent(text, recipient, i, senderEmail, senderDisplayName);
         
         // Create email message
         const emailMessage = {
-          senderAddress: sender,
+          senderAddress: senderEmail,
           content: {
             subject: personalizedSubject,
             plainText: personalizedText,
@@ -513,7 +523,7 @@ async function sendEmailsAsync(
         // Update statistics
         stats.sent++;
         stats.successful++;
-        senderStats[sender].successful++;
+        senderStats[senderEmail].successful++;
         
         // Add email detail for real-time tracking
         addEmailDetail({
@@ -521,7 +531,7 @@ async function sendEmailsAsync(
           recipient: recipient.email,
           subject: subject,
           status: 'success',
-          sender: sender
+          sender: senderEmail
         });
 
         // Persist email log to MongoDB if campaignId is present
@@ -532,7 +542,7 @@ async function sendEmailsAsync(
               name: recipient.name,
               status: 'sent',
               timestamp: new Date(),
-              sender: sender
+              sender: senderEmail
             });
           } catch (err) {
             console.warn('Failed to persist email log:', err);
@@ -540,7 +550,7 @@ async function sendEmailsAsync(
         }
 
         // Console log matching HTML/JS project format
-        console.log(`OK ${recipient.email} via ${sender} — status: 202 (${stats.sent}/${recipients.length})`);
+        console.log(`OK ${recipient.email} via ${senderEmail} (${senderDisplayName}) — status: 202 (${stats.sent}/${recipients.length})`);
 
         // Update campaign status in real-time
         updateCampaignStatus({
@@ -565,7 +575,7 @@ async function sendEmailsAsync(
       } catch (error: any) {
         stats.sent++;
         stats.failed++;
-        senderStats[sender].failed++;
+        senderStats[senderEmail].failed++;
         
         // Add failed email detail
         addEmailDetail({
@@ -574,7 +584,7 @@ async function sendEmailsAsync(
           subject: subject,
           status: 'failed',
           error: error.message || 'Unknown error',
-          sender: sender
+          sender: senderEmail
         });
 
         // Persist failure to MongoDB
@@ -586,7 +596,7 @@ async function sendEmailsAsync(
               status: 'failed',
               timestamp: new Date(),
               error: error.message || 'Unknown error',
-              sender: sender
+              sender: senderEmail
             });
           } catch (err) {
             console.warn('Failed to persist error log:', err);
@@ -594,7 +604,7 @@ async function sendEmailsAsync(
         }
 
         // Console log for failed emails
-        console.log(`❌ FAILED ${recipient.email} via ${sender} — error: ${error.message} (${stats.sent}/${recipients.length})`);
+        console.log(`❌ FAILED ${recipient.email} via ${senderEmail} (${senderDisplayName}) — error: ${error.message} (${stats.sent}/${recipients.length})`);
 
         // Update campaign status
         updateCampaignStatus({
@@ -650,7 +660,7 @@ async function sendEmailsAsync(
         }
         
         const campaignStartTime = getCampaignStatus().startTime || Date.now();
-        const delay = calculateHumanLikeDelay(i, stats.sent, recipients.length, sender, campaignStartTime, timezoneConfig);
+        const delay = calculateHumanLikeDelay(i, stats.sent, recipients.length, senderEmail, campaignStartTime, timezoneConfig);
         
         // Update campaign status with delay info for UI
         const delaySeconds = Math.round(delay / 1000);

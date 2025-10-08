@@ -3,7 +3,7 @@ import { TimezoneConfig, getTimezoneDelayMultiplier, getCurrentHourInTimezone, i
 
 // Spintax expansion with seeded randomization
 export function expandSpintax(text: string, seed: number | null = null): string {
-  console.log('🔧 expandSpintax START:', { textLength: text?.length, seed, hasSpintax: /{[^}]*\|[^}]*}/.test(text || '') });
+  console.log('🔧 expandSpintax START:', { textLength: text?.length, seed, hasSpintax: /{[^{}]*\|[^{}]*}/.test(text || '') });
   
   if (!text || typeof text !== 'string') {
     console.log('❌ expandSpintax ABORT: Invalid input');
@@ -25,10 +25,14 @@ export function expandSpintax(text: string, seed: number | null = null): string 
   let iterations = 0;
   const maxIterations = 100; // Prevent infinite loops
   
-  while (/{[^}]*\|[^}]*}/.test(result) && iterations < maxIterations) {
+  // Match single braces with pipe, but NOT double braces {{...}}
+  // Regex: { followed by (not { or }), then |, then (not { or }), then }
+  const spintaxPattern = /{([^{}]+\|[^{}]+)}/;
+  
+  while (spintaxPattern.test(result) && iterations < maxIterations) {
     const beforeReplace = result;
     // Process each spintax block one at a time to ensure different random values
-    result = result.replace(/{([^}]+)}/, (match, content) => {
+    result = result.replace(spintaxPattern, (match, content) => {
       const options = content.split('|').map((s: string) => s.trim());
       if (options.length <= 1) return match;
       
@@ -41,7 +45,7 @@ export function expandSpintax(text: string, seed: number | null = null): string 
     iterations++;
   }
   
-  console.log('✅ expandSpintax END:', { iterations, stillHasSpintax: /{[^}]*\|[^}]*}/.test(result) });
+  console.log('✅ expandSpintax END:', { iterations, stillHasSpintax: spintaxPattern.test(result) });
   
   return result;
 }
@@ -51,7 +55,8 @@ export function personalizeContent(
   content: string, 
   recipient: Recipient, 
   recipientIndex: number = 0, 
-  senderEmail: string = ''
+  senderEmail: string = '',
+  senderDisplayName?: string
 ): string {
   if (!content || !recipient) return content;
   
@@ -75,18 +80,23 @@ export function personalizeContent(
     result: personalized.substring(0, 100)
   });
   
-  // Sender name mapping
-  const senderNames: { [key: string]: string } = {
-    'sales': 'John from Sales',
-    'support': 'Sarah from Support', 
-    'marketing': 'Mike from Marketing',
-    'info': 'The Team',
-    'hello': 'Customer Success',
-    'contact': 'Business Development'
-  };
+  // Determine sender name to use
+  let senderName = senderDisplayName; // Use provided displayName if available
   
-  const senderUsername = senderEmail.split('@')[0] || '';
-  const senderName = senderNames[senderUsername] || 'The Team';
+  // Fallback to mapping if no displayName provided
+  if (!senderName) {
+    const senderNames: { [key: string]: string } = {
+      'sales': 'John from Sales',
+      'support': 'Sarah from Support', 
+      'marketing': 'Mike from Marketing',
+      'info': 'The Team',
+      'hello': 'Customer Success',
+      'contact': 'Business Development'
+    };
+    
+    const senderUsername = senderEmail.split('@')[0] || '';
+    senderName = senderNames[senderUsername] || 'The Team';
+  }
   
   // Variable replacement
   personalized = personalized
