@@ -36,9 +36,9 @@ const LoginPage = () => {
       if (data.success) {
         // Use the auth context login method
         authLogin(data.token, data.user);
-        
+
         toast.success('Login successful!');
-        
+
         // Use replace to avoid back button issues
         setTimeout(() => {
           router.replace('/');
@@ -57,10 +57,10 @@ const LoginPage = () => {
   return (
     <>
       <Head>
-        <title>Login - Cold Email Sender</title>
+        <title>Login - Cold Email Sender| coldsendz</title>
         <meta name="description" content="Login to your cold email sender account" />
       </Head>
-      
+
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center px-4">
         <div className="max-w-md w-full space-y-8">
           <div className="bg-white rounded-xl shadow-lg p-8">
