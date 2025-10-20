@@ -9,6 +9,7 @@ interface CSVPreview {
   totalRows: number;
   emailColumn?: string;
   nameColumn?: string;
+  companyColumn?: string;
 }
 
 interface RecipientsSectionProps {
@@ -25,7 +26,7 @@ export default function RecipientsSection({ recipients, setRecipients }: Recipie
     valid: 0,
     duplicatesRemoved: 0
   });
-  
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = () => {
@@ -64,7 +65,7 @@ export default function RecipientsSection({ recipients, setRecipients }: Recipie
         try {
           const text = e.target?.result as string;
           const lines = text.split('\n').filter(line => line.trim());
-          
+
           if (lines.length === 0) {
             reject(new Error('CSV file is empty'));
             return;
@@ -72,10 +73,11 @@ export default function RecipientsSection({ recipients, setRecipients }: Recipie
 
           // Parse headers
           const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-          
-          // Find email and name columns
+
+          // Find email, name, and company columns
           const emailColumn = findEmailColumn(headers);
           const nameColumn = findNameColumn(headers);
+          const companyColumn = findCompanyColumn(headers);
 
           if (!emailColumn) {
             reject(new Error('No email column found. Please ensure your CSV has an "email" column.'));
@@ -92,12 +94,23 @@ export default function RecipientsSection({ recipients, setRecipients }: Recipie
             return row;
           });
 
+          console.log('🔍 CSV Column Detection:', {
+            headers,
+            emailColumn,
+            nameColumn,
+            companyColumn,
+            emailIndex: emailColumn ? headers.indexOf(emailColumn) : -1,
+            nameIndex: nameColumn ? headers.indexOf(nameColumn) : -1,
+            companyIndex: companyColumn ? headers.indexOf(companyColumn) : -1
+          });
+
           setCsvPreview({
             headers,
             data: previewData,
             totalRows: lines.length - 1,
             emailColumn,
-            nameColumn
+            nameColumn,
+            companyColumn
           });
           setShowPreview(true);
           resolve();
@@ -112,8 +125,8 @@ export default function RecipientsSection({ recipients, setRecipients }: Recipie
 
   const findEmailColumn = (headers: string[]): string | undefined => {
     const emailPatterns = ['email', 'e_mail', 'emailaddress', 'email_address', 'e-mail'];
-    return headers.find(header => 
-      emailPatterns.some(pattern => 
+    return headers.find(header =>
+      emailPatterns.some(pattern =>
         header.toLowerCase().includes(pattern.toLowerCase())
       )
     );
@@ -121,8 +134,17 @@ export default function RecipientsSection({ recipients, setRecipients }: Recipie
 
   const findNameColumn = (headers: string[]): string | undefined => {
     const namePatterns = ['name', 'first_name', 'last_name', 'full_name', 'firstname', 'lastname', 'fullname'];
-    return headers.find(header => 
-      namePatterns.some(pattern => 
+    return headers.find(header =>
+      namePatterns.some(pattern =>
+        header.toLowerCase().includes(pattern.toLowerCase())
+      )
+    );
+  };
+
+  const findCompanyColumn = (headers: string[]): string | undefined => {
+    const companyPatterns = ['company', 'company_name', 'organization', 'org', 'business', 'firm'];
+    return headers.find(header =>
+      companyPatterns.some(pattern =>
         header.toLowerCase().includes(pattern.toLowerCase())
       )
     );
@@ -135,43 +157,60 @@ export default function RecipientsSection({ recipients, setRecipients }: Recipie
     try {
       const file = fileInputRef.current.files[0];
       const reader = new FileReader();
-      
+
       reader.onload = (e) => {
         const text = e.target?.result as string;
         const lines = text.split('\n').filter(line => line.trim());
         const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-        
+
         const emailColumnIndex = headers.indexOf(csvPreview.emailColumn!);
         const nameColumnIndex = csvPreview.nameColumn ? headers.indexOf(csvPreview.nameColumn) : -1;
+        const companyColumnIndex = csvPreview.companyColumn ? headers.indexOf(csvPreview.companyColumn) : -1;
 
         const newRecipients: Recipient[] = [];
-        
+
         for (let i = 1; i < lines.length; i++) {
           const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
           const email = values[emailColumnIndex]?.toLowerCase();
           const name = nameColumnIndex >= 0 ? values[nameColumnIndex] : email?.split('@')[0];
-          
+          const company = companyColumnIndex >= 0 ? values[companyColumnIndex] : '';
+
+          console.log('📊 CSV Row Processing:', {
+            row: i,
+            email,
+            name,
+            company,
+            emailIndex: emailColumnIndex,
+            nameIndex: nameColumnIndex,
+            companyIndex: companyColumnIndex,
+            allValues: values
+          });
+
           if (email && isValidEmail(email)) {
-            newRecipients.push({ email, name: name || email.split('@')[0] });
+            newRecipients.push({
+              email,
+              name: name || email.split('@')[0],
+              company: company || ''
+            });
           }
         }
 
         // Combine with existing recipients and remove duplicates
         const allRecipients = [...recipients, ...newRecipients];
         const uniqueRecipients = dedupeRecipients(allRecipients);
-        
+
         setRecipients(uniqueRecipients);
         updateStats(newRecipients, uniqueRecipients.length - recipients.length);
         setShowPreview(false);
         setCsvPreview(null);
-        
+
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
-        
+
         toast.success(`Imported ${uniqueRecipients.length - recipients.length} new recipients`);
       };
-      
+
       reader.readAsText(file);
     } catch (error) {
       console.error('Error importing CSV:', error);
@@ -184,7 +223,7 @@ export default function RecipientsSection({ recipients, setRecipients }: Recipie
   const updateStats = (newRecipients: Recipient[], actuallyAdded: number) => {
     const validCount = newRecipients.filter(r => isValidEmail(r.email)).length;
     const duplicatesRemoved = newRecipients.length - actuallyAdded;
-    
+
     setStats({
       total: recipients.length + actuallyAdded,
       valid: recipients.filter(r => isValidEmail(r.email)).length + validCount,
@@ -264,13 +303,13 @@ export default function RecipientsSection({ recipients, setRecipients }: Recipie
           Upload CSV files to import and manage recipient email addresses
         </p>
       </div>
-      
+
       <div className="space-y-6">
         {/* CSV Upload Section */}
         <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Upload CSV File</h2>
-          
-          <div 
+
+          <div
             className="border-2 border-dashed border-primary-300 rounded-3xl p-12 text-center bg-gradient-to-br from-primary-50 to-accent-50 transition-all duration-300 hover:border-primary-400 hover:from-primary-100 hover:to-accent-100"
             onDrop={handleDrop}
             onDragOver={handleDragOver}
@@ -290,11 +329,10 @@ export default function RecipientsSection({ recipients, setRecipients }: Recipie
             <button
               onClick={handleFileSelect}
               disabled={isProcessing}
-              className={`px-8 py-4 rounded-2xl font-semibold transition-all duration-300 ${
-                isProcessing
-                  ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-primary-500 to-primary-600 text-white hover:from-primary-600 hover:to-primary-700 shadow-blue hover:shadow-large'
-              }`}
+              className={`px-8 py-4 rounded-2xl font-semibold transition-all duration-300 ${isProcessing
+                ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                : 'bg-gradient-to-r from-primary-500 to-primary-600 text-white hover:from-primary-600 hover:to-primary-700 shadow-blue hover:shadow-large'
+                }`}
             >
               {isProcessing ? (
                 <div className="flex items-center space-x-2">
@@ -327,7 +365,11 @@ export default function RecipientsSection({ recipients, setRecipients }: Recipie
               </li>
               <li className="flex items-start space-x-2">
                 <span className="text-primary-600 mt-0.5">•</span>
-                <span><strong>Alternative names:</strong> <code className="bg-primary-200 px-2 py-1 rounded text-primary-900">e_mail</code>, <code className="bg-primary-200 px-2 py-1 rounded text-primary-900">emailaddress</code>, <code className="bg-primary-200 px-2 py-1 rounded text-primary-900">first_name</code>, <code className="bg-primary-200 px-2 py-1 rounded text-primary-900">full_name</code></span>
+                <span><strong>Optional:</strong> <code className="bg-primary-200 px-2 py-1 rounded text-primary-900">company</code> column with company names</span>
+              </li>
+              <li className="flex items-start space-x-2">
+                <span className="text-primary-600 mt-0.5">•</span>
+                <span><strong>Alternative names:</strong> <code className="bg-primary-200 px-2 py-1 rounded text-primary-900">e_mail</code>, <code className="bg-primary-200 px-2 py-1 rounded text-primary-900">emailaddress</code>, <code className="bg-primary-200 px-2 py-1 rounded text-primary-900">first_name</code>, <code className="bg-primary-200 px-2 py-1 rounded text-primary-900">full_name</code>, <code className="bg-primary-200 px-2 py-1 rounded text-primary-900">company_name</code>, <code className="bg-primary-200 px-2 py-1 rounded text-primary-900">organization</code></span>
               </li>
             </ul>
           </div>
@@ -337,24 +379,24 @@ export default function RecipientsSection({ recipients, setRecipients }: Recipie
         {showPreview && csvPreview && (
           <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">File Preview</h2>
-            
+
             <div className="mb-4 p-3 bg-gray-50 rounded-md border text-sm">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <span className="font-medium text-gray-700">File contains:</span> 
+                  <span className="font-medium text-gray-700">File contains:</span>
                   <span className="ml-2 text-blue-600 font-semibold">{csvPreview.totalRows} rows</span>
                 </div>
                 <div>
-                  <span className="font-medium text-gray-700">Email column:</span> 
+                  <span className="font-medium text-gray-700">Email column:</span>
                   <span className="ml-2 text-blue-600 font-semibold">{csvPreview.emailColumn}</span>
                 </div>
                 <div>
-                  <span className="font-medium text-gray-700">Name column:</span> 
+                  <span className="font-medium text-gray-700">Name column:</span>
                   <span className="ml-2 text-green-600 font-semibold">{csvPreview.nameColumn || 'Not found'}</span>
                 </div>
               </div>
             </div>
-            
+
             <div className="border border-gray-200 rounded-lg overflow-hidden mb-4">
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -383,16 +425,15 @@ export default function RecipientsSection({ recipients, setRecipients }: Recipie
                 </table>
               </div>
             </div>
-            
+
             <div className="flex gap-3">
               <button
                 onClick={importCSVRecipients}
                 disabled={isProcessing}
-                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                  isProcessing
-                    ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                    : 'bg-green-600 text-white hover:bg-green-700'
-                }`}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${isProcessing
+                  ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                  : 'bg-green-600 text-white hover:bg-green-700'
+                  }`}
               >
                 {isProcessing ? 'Importing...' : 'Import Recipients'}
               </button>
@@ -414,7 +455,7 @@ export default function RecipientsSection({ recipients, setRecipients }: Recipie
               <p className="text-sm text-gray-600 mt-1">Manage your recipient database</p>
             </div>
           </div>
-          
+
           {/* Stats */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 p-4 bg-gray-50 rounded-lg border">
             <div className="text-center p-4">
@@ -498,22 +539,20 @@ export default function RecipientsSection({ recipients, setRecipients }: Recipie
             <button
               onClick={clearAllRecipients}
               disabled={recipients.length === 0}
-              className={`px-4 py-2 text-sm font-medium rounded-md border transition-colors ${
-                recipients.length === 0
-                  ? 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed'
-                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-              }`}
+              className={`px-4 py-2 text-sm font-medium rounded-md border transition-colors ${recipients.length === 0
+                ? 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed'
+                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
             >
               Clear All Recipients
             </button>
             <button
               onClick={exportRecipientsCSV}
               disabled={recipients.length === 0}
-              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                recipients.length === 0
-                  ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
-              }`}
+              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${recipients.length === 0
+                ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
             >
               Export as CSV
             </button>
