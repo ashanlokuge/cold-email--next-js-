@@ -210,7 +210,15 @@ export function getCurrentDayInTimezone(timezone: string): number {
  */
 export function isBusinessHours(config: TimezoneConfig): boolean {
   const currentHour = getCurrentHourInTimezone(config.targetTimezone);
-  return currentHour >= config.businessHourStart && currentHour < config.businessHourEnd;
+  
+  // Handle overnight business hours (e.g., 22:00-2:00)
+  if (config.businessHourStart > config.businessHourEnd) {
+    // Overnight range: current hour should be >= start OR < end
+    return currentHour >= config.businessHourStart || currentHour < config.businessHourEnd;
+  } else {
+    // Normal range: current hour should be >= start AND < end
+    return currentHour >= config.businessHourStart && currentHour < config.businessHourEnd;
+  }
 }
 
 /**
@@ -236,7 +244,15 @@ export function isSendingAllowedToday(config: TimezoneConfig): boolean {
  */
 export function isWithinSendingWindow(config: TimezoneConfig): boolean {
   const currentHour = getCurrentHourInTimezone(config.targetTimezone);
-  return currentHour >= config.sendTimeStart && currentHour < config.sendTimeEnd;
+  
+  // Handle overnight time ranges (e.g., 22:00-2:00)
+  if (config.sendTimeStart > config.sendTimeEnd) {
+    // Overnight range: current hour should be >= start OR < end
+    return currentHour >= config.sendTimeStart || currentHour < config.sendTimeEnd;
+  } else {
+    // Normal range: current hour should be >= start AND < end
+    return currentHour >= config.sendTimeStart && currentHour < config.sendTimeEnd;
+  }
 }
 
 /**
