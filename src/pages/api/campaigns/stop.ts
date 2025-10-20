@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { stopCampaign, getCampaignStatus } from '@/lib/campaignState';
+import { stopCampaignInstance, getCampaignInstance } from '@/lib/multiCampaignManager';
 import { campaignRepository } from '@/lib/campaignRepository';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -8,26 +8,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    stopCampaign();
-    const status = getCampaignStatus();
-    
-    if (status.campaignId) {
-      try {
-        await campaignRepository.updateCampaignProgress(status.campaignId, {
-          status: 'stopped',
-          endTime: new Date()
-        });
-      } catch (err) {
-        console.warn('Failed to persist stop to DB:', err?.message || err);
-      }
+    const { campaignId } = req.body;
+
+    if (!campaignId) {
+      return res.status(400).json({ error: 'Campaign ID is required' });
     }
 
-    console.log('⏹️ Campaign stopped via API');
+    const campaign = getCampaignInstance(campaignId);
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campaign not found' });
+    }
+
+    stopCampaignInstance(campaignId);
+    
+    // Persist to DB
+    try {
+      await campaignRepository.updateCampaignProgress(campaignId, {
+        status: 'stopped',
+        endTime: new Date()
+      });
+    } catch (err) {
+      console.warn('Failed to persist stop to DB:', err?.message || err);
+    }
+
+    console.log(`⏹️ Campaign ${campaignId} stopped via API`);
     
     res.status(200).json({ 
       success: true, 
       message: 'Campaign stopped successfully',
-      status 
+      campaignId,
+      status: 'stopped'
     });
   } catch (error) {
     console.error('❌ Error stopping campaign:', error);

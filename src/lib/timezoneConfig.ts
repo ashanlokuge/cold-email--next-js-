@@ -210,7 +210,7 @@ export function getCurrentDayInTimezone(timezone: string): number {
  */
 export function isBusinessHours(config: TimezoneConfig): boolean {
   const currentHour = getCurrentHourInTimezone(config.targetTimezone);
-  
+
   // Handle overnight business hours (e.g., 22:00-2:00)
   if (config.businessHourStart > config.businessHourEnd) {
     // Overnight range: current hour should be >= start OR < end
@@ -244,7 +244,7 @@ export function isSendingAllowedToday(config: TimezoneConfig): boolean {
  */
 export function isWithinSendingWindow(config: TimezoneConfig): boolean {
   const currentHour = getCurrentHourInTimezone(config.targetTimezone);
-  
+
   // Handle overnight time ranges (e.g., 22:00-2:00)
   if (config.sendTimeStart > config.sendTimeEnd) {
     // Overnight range: current hour should be >= start OR < end
@@ -260,7 +260,7 @@ export function isWithinSendingWindow(config: TimezoneConfig): boolean {
  */
 export function getTimezoneDelayMultiplier(config: TimezoneConfig): number {
   const currentHour = getCurrentHourInTimezone(config.targetTimezone);
-  
+
   // Check if today is an allowed sending day
   if (!isSendingAllowedToday(config)) {
     return 10.0; // Very slow on non-sending days
@@ -316,7 +316,7 @@ export function getTimezoneStatusMessage(config: TimezoneConfig): string {
   const currentHour = getCurrentHourInTimezone(config.targetTimezone);
   const currentDay = getCurrentDayInTimezone(config.targetTimezone);
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  
+
   const now = new Date();
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: config.targetTimezone,
@@ -344,9 +344,9 @@ export function getTimezoneOffset(fromTimezone: string, toTimezone: string): num
     hour: 'numeric',
     hour12: false
   });
-  
+
   const fromHour = parseInt(fromFormatter.format(now));
   const toHour = parseInt(toFormatter.format(now));
-  
+
   return toHour - fromHour;
 }

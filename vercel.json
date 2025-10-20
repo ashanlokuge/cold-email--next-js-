@@ -1,11 +1,15 @@
 {
   "version": 2,
   "name": "coldsendz-nextjs",
-  "builds": [
-    {
-      "src": "package.json",
-      "use": "@vercel/next"
+  "functions": {
+    "src/pages/api/campaigns/send.ts": {
+      "maxDuration": 60
+    },
+    "src/pages/api/campaigns/process-chunk.ts": {
+      "maxDuration": 60
+    },
+    "src/pages/api/campaigns/schedule-chunks.ts": {
+      "maxDuration": 60
     }
-  ]
-  
+  }
 }

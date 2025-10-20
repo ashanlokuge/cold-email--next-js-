@@ -7,8 +7,15 @@ import {
   resetCampaignStatus,
   getCampaignStatus,
   addEmailDetail,
-  completeCampaign
-} from '@/lib/campaignState';
+  completeCampaign,
+  createCampaignInstance,
+  getCampaignInstance,
+  updateCampaignInstance,
+  canStartNewCampaign,
+  addEmailDetailToCampaign,
+  completeCampaignInstance,
+  getRunningCampaignsForUser
+} from '@/lib/multiCampaignManager';
 import { getDb } from '@/lib/db';
 import { campaignRepository } from '@/lib/campaignRepository';
 import {
@@ -149,11 +156,18 @@ export default async function handler(
       console.log(`🕐 Business hours: ${timezoneConfig.businessHourStart}:00 - ${timezoneConfig.businessHourEnd}:00`);
     }
 
-    // Check if campaign is already running
-    const currentStatus = getCampaignStatus();
-    if (currentStatus.isRunning) {
+    // Check if user can start a new campaign (limit concurrent campaigns)
+    if (!canStartNewCampaign(userId, 5)) { // Max 5 concurrent campaigns per user
+      const runningCampaigns = getRunningCampaignsForUser(userId);
       return res.status(409).json({
-        error: 'A campaign is already running'
+        error: `Maximum concurrent campaigns reached (${runningCampaigns.length}/5). Please wait for a campaign to complete or stop one.`,
+        runningCampaigns: runningCampaigns.map(c => ({
+          campaignId: c.campaignId,
+          campaignName: c.campaignName,
+          status: c.status,
+          sent: c.sent,
+          total: c.total
+        }))
       });
     }
 
@@ -184,23 +198,81 @@ export default async function handler(
       // Continue anyway - campaign will run but won't be persisted
     }
 
-    // Initialize campaign status
-    resetCampaignStatus();
-    updateCampaignStatus({
-      isRunning: true,
+    // Create new campaign instance
+    const campaignInstance = createCampaignInstance(
+      campaignId,
       campaignName,
-      sent: 0,
-      successful: 0,
-      failed: 0,
-      total: recipients.length,
-      completed: false,
-      startTime: Date.now(),
-      status: 'running',
-      campaignId
-    });
+      userId,
+      userEmail,
+      recipients.length
+    );
 
-    // Start sending emails asynchronously
-    sendEmailsAsync(campaignName, subject, text, recipients, senders, selectedSenders, campaignId, timezoneConfig);
+    // Choose execution method based on campaign size
+    const useChunkedExecution = recipients.length > 50; // Use chunks for campaigns > 50 emails
+
+    if (useChunkedExecution) {
+      console.log(`📦 Using chunked execution for large campaign (${recipients.length} emails)`);
+
+      // Schedule chunks instead of direct execution
+      setTimeout(async () => {
+        try {
+          const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/campaigns/schedule-chunks`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              campaignId,
+              recipients,
+              subject,
+              text,
+              senders,
+              selectedSenders,
+              timezoneConfig,
+              chunkSize: Math.min(20, Math.max(5, Math.floor(recipients.length / 10))) // Dynamic chunk size
+            })
+          });
+
+          if (!response.ok) {
+            console.error('❌ Failed to schedule chunks:', await response.text());
+            // Mark campaign as failed
+            if (campaignId) {
+              campaignRepository.updateCampaignProgress(campaignId, {
+                status: 'stopped',
+                endTime: new Date()
+              }).catch(err => console.warn('Failed to update campaign status:', err));
+            }
+          } else {
+            const result = await response.json();
+            console.log('✅ Chunks scheduled successfully:', result);
+          }
+        } catch (error) {
+          console.error('❌ Error scheduling chunks:', error);
+          // Mark campaign as failed
+          if (campaignId) {
+            campaignRepository.updateCampaignProgress(campaignId, {
+              status: 'stopped',
+              endTime: new Date()
+            }).catch(err => console.warn('Failed to update campaign status:', err));
+          }
+        }
+      }, 1000); // Start scheduling after 1 second
+    } else {
+      console.log(`🚀 Using direct execution for small campaign (${recipients.length} emails)`);
+
+      // Start sending emails asynchronously (non-blocking) for small campaigns
+      sendEmailsAsync(campaignName, subject, text, recipients, senders, selectedSenders, campaignId, timezoneConfig)
+        .catch(error => {
+          console.error('❌ Campaign execution failed:', error);
+          // Mark campaign as failed in DB
+          if (campaignId) {
+            campaignRepository.updateCampaignProgress(campaignId, {
+              status: 'stopped',
+              endTime: new Date()
+            }).catch(err => console.warn('Failed to update campaign status:', err));
+          }
+        });
+    }
 
     return res.status(200).json({
       success: true,
@@ -239,18 +311,26 @@ async function sendEmailsAsync(
     }
   };
 
+  // Get campaign instance
+  const getCurrentCampaign = () => getCampaignInstance(campaignId) || null;
+
   // Helper: sync in-memory status with DB if they diverge
   const syncStatusFromDb = async (): Promise<'running' | 'paused' | 'stopped' | 'completed' | null> => {
     const dbStatus = await fetchDbStatus();
-    if (!dbStatus) return null;
-    const local = getCampaignStatus();
-    if (dbStatus !== local.status) {
+    if (!dbStatus || !campaignId) return null;
+    
+    const local = getCurrentCampaign();
+    if (local && dbStatus !== local.status) {
       if (dbStatus === 'paused') {
-        updateCampaignStatus({ status: 'paused' });
+        updateCampaignInstance(campaignId, { status: 'paused', isRunning: false });
       } else if (dbStatus === 'running') {
-        updateCampaignStatus({ status: 'running', isRunning: true });
+        updateCampaignInstance(campaignId, { status: 'running', isRunning: true });
       } else if (dbStatus === 'stopped' || dbStatus === 'completed') {
-        updateCampaignStatus({ status: dbStatus, isRunning: false, completed: dbStatus !== 'stopped' ? true : local.completed });
+        updateCampaignInstance(campaignId, { 
+          status: dbStatus, 
+          isRunning: false, 
+          completed: dbStatus === 'completed' 
+        });
       }
     }
     return dbStatus;
@@ -266,9 +346,9 @@ async function sendEmailsAsync(
 
       // Check DB-driven status during wait
       const dbStatus = await syncStatusFromDb();
-      const statusNow = getCampaignStatus();
+      const statusNow = getCurrentCampaign();
 
-      if (statusNow.status === 'stopped' || statusNow.isRunning === false || dbStatus === 'stopped') {
+      if (!statusNow || statusNow.status === 'stopped' || statusNow.isRunning === false || dbStatus === 'stopped') {
         return false; // interrupted due to stop
       }
 
@@ -277,8 +357,8 @@ async function sendEmailsAsync(
         console.log('⏸️ Campaign paused during wait. Polling for resume...');
         await sleep(2000);
         await syncStatusFromDb();
-        const updated = getCampaignStatus();
-        if (updated.status === 'stopped' || updated.isRunning === false) return false;
+        const updated = getCurrentCampaign();
+        if (!updated || updated.status === 'stopped' || updated.isRunning === false) return false;
         if (updated.status === 'running') break; // resume
       }
     }
@@ -330,148 +410,158 @@ async function sendEmailsAsync(
       senderStats[sender.email] = { sent: 0, successful: 0, failed: 0, assigned: 0 };
     });
 
-    // COMPLETE DETERMINISTIC SENDER SELECTION ALGORITHM (from HTML/JS project)
+    // MEMORY-OPTIMIZED SENDER DISTRIBUTION
+    // Use simple round-robin for large campaigns to prevent memory issues
+    const useSimpleDistribution = recipients.length > 1000;
 
-    // GROUP SENDERS BY DOMAIN FOR PERFECT DOMAIN DISTRIBUTION
-    const sendersByDomain: Record<string, string[]> = {};
-    const domainStats: Record<string, { senders: number; targetEmails: number; currentEmails: number }> = {};
+    let senderSequence: string[] = [];
 
-    availableSenders.forEach(sender => {
-      const domain = sender.email.split('@')[1];
-      if (!sendersByDomain[domain]) {
-        sendersByDomain[domain] = [];
-        domainStats[domain] = { senders: 0, targetEmails: 0, currentEmails: 0 };
-      }
-      sendersByDomain[domain].push(sender.email);
-      domainStats[domain].senders++;
-    });
+    if (useSimpleDistribution) {
+      console.log('📊 Using simple round-robin distribution for large campaign');
+      senderSequence = recipients.map((_, i) => availableSenders[i % availableSenders.length].email);
+    } else {
+      console.log('📊 Using advanced distribution algorithm');
 
-    const domains = Object.keys(sendersByDomain);
+      // GROUP SENDERS BY DOMAIN FOR PERFECT DOMAIN DISTRIBUTION
+      const sendersByDomain: Record<string, string[]> = {};
+      const domainStats: Record<string, { senders: number; targetEmails: number; currentEmails: number }> = {};
 
-    // PRE-CALCULATE PERFECT DISTRIBUTION
-    console.log(`\n🎯 Calculating perfect sender distribution for ${recipients.length} emails across ${availableSenders.length} senders in ${domains.length} domains...`);
-
-    const baseEmailsPerSender = Math.floor(recipients.length / availableSenders.length);
-    const remainderEmails = recipients.length % availableSenders.length;
-
-    // Calculate domain distribution
-    domains.forEach(domain => {
-      const sendersInDomain = sendersByDomain[domain].length;
-      domainStats[domain].targetEmails = sendersInDomain * baseEmailsPerSender;
-    });
-
-    // Distribute remainder emails across domains
-    let remainderToDistribute = remainderEmails;
-    domains.forEach(domain => {
-      if (remainderToDistribute > 0) {
-        const sendersInDomain = sendersByDomain[domain].length;
-        const extraForDomain = Math.min(remainderToDistribute, sendersInDomain);
-        domainStats[domain].targetEmails += extraForDomain;
-        remainderToDistribute -= extraForDomain;
-      }
-    });
-
-    // Create distribution plan
-    const distributionPlan: Array<{
-      sender: string;
-      domain: string;
-      targetCount: number;
-      currentCount: number;
-    }> = [];
-
-    let remainderCounter = 0;
-
-    for (let i = 0; i < availableSenders.length; i++) {
-      const emailsForThisSender = baseEmailsPerSender + (remainderCounter < remainderEmails ? 1 : 0);
-      distributionPlan.push({
-        sender: availableSenders[i].email,
-        domain: availableSenders[i].email.split('@')[1],
-        targetCount: emailsForThisSender,
-        currentCount: 0
-      });
-      remainderCounter++;
-    }
-
-    // Log the planned distribution by domain
-    console.log(`📊 Planned Distribution by Domain:`);
-    domains.forEach(domain => {
-      const domainSenders = distributionPlan.filter(p => p.domain === domain);
-      const domainTotal = domainSenders.reduce((sum, p) => sum + p.targetCount, 0);
-      const domainPercentage = ((domainTotal / recipients.length) * 100).toFixed(1);
-
-      console.log(`\n  🌐 ${domain}: ${domainTotal} emails (${domainPercentage}%)`);
-      domainSenders.forEach(plan => {
-        const senderPercentage = ((plan.targetCount / recipients.length) * 100).toFixed(1);
-        console.log(`    ├── ${plan.sender}: ${plan.targetCount} emails (${senderPercentage}%)`);
-      });
-    });
-
-    // CREATE EXACT SENDER SEQUENCE WITH ANTI-CONSECUTIVE LOGIC
-    const senderSequence: string[] = [];
-    let currentSenderIndex = 0;
-
-    for (let emailIndex = 0; emailIndex < recipients.length; emailIndex++) {
-      let selectedSender: string | null = null;
-      let attempts = 0;
-      const lastSender = senderSequence.length > 0 ? senderSequence[senderSequence.length - 1] : null;
-
-      // First pass: Try to find a sender that hasn't reached their target AND is different from last sender
-      while (attempts < availableSenders.length) {
-        const planIndex = currentSenderIndex % availableSenders.length;
-        const plan = distributionPlan[planIndex];
-
-        if (plan.currentCount < plan.targetCount) {
-          // Check if this sender is different from the last sender (avoid consecutive)
-          if (!lastSender || plan.sender !== lastSender) {
-            selectedSender = plan.sender;
-            plan.currentCount++;
-            senderStats[plan.sender].assigned++;
-            break;
-          }
-          // If it's the same as last sender, try next one (unless we're out of options)
+      availableSenders.forEach(sender => {
+        const domain = sender.email.split('@')[1];
+        if (!sendersByDomain[domain]) {
+          sendersByDomain[domain] = [];
+          domainStats[domain] = { senders: 0, targetEmails: 0, currentEmails: 0 };
         }
+        sendersByDomain[domain].push(sender.email);
+        domainStats[domain].senders++;
+      });
 
-        currentSenderIndex++;
-        attempts++;
+      const domains = Object.keys(sendersByDomain);
+
+      // PRE-CALCULATE PERFECT DISTRIBUTION
+      console.log(`\n🎯 Calculating perfect sender distribution for ${recipients.length} emails across ${availableSenders.length} senders in ${domains.length} domains...`);
+
+      const baseEmailsPerSender = Math.floor(recipients.length / availableSenders.length);
+      const remainderEmails = recipients.length % availableSenders.length;
+
+      // Calculate domain distribution
+      domains.forEach(domain => {
+        const sendersInDomain = sendersByDomain[domain].length;
+        domainStats[domain].targetEmails = sendersInDomain * baseEmailsPerSender;
+      });
+
+      // Distribute remainder emails across domains
+      let remainderToDistribute = remainderEmails;
+      domains.forEach(domain => {
+        if (remainderToDistribute > 0) {
+          const sendersInDomain = sendersByDomain[domain].length;
+          const extraForDomain = Math.min(remainderToDistribute, sendersInDomain);
+          domainStats[domain].targetEmails += extraForDomain;
+          remainderToDistribute -= extraForDomain;
+        }
+      });
+
+      // Create distribution plan
+      const distributionPlan: Array<{
+        sender: string;
+        domain: string;
+        targetCount: number;
+        currentCount: number;
+      }> = [];
+
+      let remainderCounter = 0;
+
+      for (let i = 0; i < availableSenders.length; i++) {
+        const emailsForThisSender = baseEmailsPerSender + (remainderCounter < remainderEmails ? 1 : 0);
+        distributionPlan.push({
+          sender: availableSenders[i].email,
+          domain: availableSenders[i].email.split('@')[1],
+          targetCount: emailsForThisSender,
+          currentCount: 0
+        });
+        remainderCounter++;
       }
 
-      // Second pass: If we couldn't find a different sender, allow same sender but log it
-      if (!selectedSender) {
-        attempts = 0;
-        currentSenderIndex = 0; // Reset index for second pass
+      // Log the planned distribution by domain
+      console.log(`📊 Planned Distribution by Domain:`);
+      domains.forEach(domain => {
+        const domainSenders = distributionPlan.filter(p => p.domain === domain);
+        const domainTotal = domainSenders.reduce((sum, p) => sum + p.targetCount, 0);
+        const domainPercentage = ((domainTotal / recipients.length) * 100).toFixed(1);
 
+        console.log(`\n  🌐 ${domain}: ${domainTotal} emails (${domainPercentage}%)`);
+        domainSenders.forEach(plan => {
+          const senderPercentage = ((plan.targetCount / recipients.length) * 100).toFixed(1);
+          console.log(`    ├── ${plan.sender}: ${plan.targetCount} emails (${senderPercentage}%)`);
+        });
+      });
+
+      // CREATE EXACT SENDER SEQUENCE WITH ANTI-CONSECUTIVE LOGIC
+      let currentSenderIndex = 0;
+
+      for (let emailIndex = 0; emailIndex < recipients.length; emailIndex++) {
+        let selectedSender: string | null = null;
+        let attempts = 0;
+        const lastSender = senderSequence.length > 0 ? senderSequence[senderSequence.length - 1] : null;
+
+        // First pass: Try to find a sender that hasn't reached their target AND is different from last sender
         while (attempts < availableSenders.length) {
           const planIndex = currentSenderIndex % availableSenders.length;
           const plan = distributionPlan[planIndex];
 
           if (plan.currentCount < plan.targetCount) {
-            selectedSender = plan.sender;
-            plan.currentCount++;
-            senderStats[plan.sender].assigned++;
-
-            // Log if we had to use the same sender consecutively
-            if (lastSender && plan.sender === lastSender) {
-              console.log(`⚠️ Using consecutive sender ${plan.sender} at position ${emailIndex} (no alternatives available)`);
+            // Check if this sender is different from the last sender (avoid consecutive)
+            if (!lastSender || plan.sender !== lastSender) {
+              selectedSender = plan.sender;
+              plan.currentCount++;
+              senderStats[plan.sender].assigned++;
+              break;
             }
-            break;
+            // If it's the same as last sender, try next one (unless we're out of options)
           }
 
           currentSenderIndex++;
           attempts++;
         }
+
+        // Second pass: If we couldn't find a different sender, allow same sender but log it
+        if (!selectedSender) {
+          attempts = 0;
+          currentSenderIndex = 0; // Reset index for second pass
+
+          while (attempts < availableSenders.length) {
+            const planIndex = currentSenderIndex % availableSenders.length;
+            const plan = distributionPlan[planIndex];
+
+            if (plan.currentCount < plan.targetCount) {
+              selectedSender = plan.sender;
+              plan.currentCount++;
+              senderStats[plan.sender].assigned++;
+
+              // Log if we had to use the same sender consecutively
+              if (lastSender && plan.sender === lastSender) {
+                console.log(`⚠️ Using consecutive sender ${plan.sender} at position ${emailIndex} (no alternatives available)`);
+              }
+              break;
+            }
+
+            currentSenderIndex++;
+            attempts++;
+          }
+        }
+
+        // Final fallback: If all senders are at capacity, use round-robin
+        if (!selectedSender) {
+          selectedSender = availableSenders[emailIndex % availableSenders.length].email;
+          senderStats[selectedSender].assigned++;
+          console.log(`⚠️ Fallback to round-robin: ${selectedSender} at position ${emailIndex}`);
+        }
+
+        senderSequence.push(selectedSender);
+
+        // Move to next sender for next iteration
+        currentSenderIndex++;
       }
-
-      // Final fallback: If all senders are at capacity, use round-robin
-      if (!selectedSender) {
-        selectedSender = availableSenders[emailIndex % availableSenders.length].email;
-        senderStats[selectedSender].assigned++;
-        console.log(`⚠️ Fallback to round-robin: ${selectedSender} at position ${emailIndex}`);
-      }
-
-      senderSequence.push(selectedSender);
-
-      // Move to next sender for next iteration
-      currentSenderIndex++;
     }
 
     // VERIFY PERFECT DISTRIBUTION AND CHECK FOR CONSECUTIVE SENDS
@@ -509,10 +599,10 @@ async function sendEmailsAsync(
     for (let i = 0; i < recipients.length; i++) {
       // Serverless-safe: sync status from DB before each email
       const dbStatus = await syncStatusFromDb();
-      const currentStatus = getCampaignStatus();
+      const currentStatus = getCurrentCampaign();
 
       // Handle stop
-      if (currentStatus.status === 'stopped' || currentStatus.isRunning === false || dbStatus === 'stopped') {
+      if (!currentStatus || currentStatus.status === 'stopped' || currentStatus.isRunning === false || dbStatus === 'stopped') {
         console.log(`⏹️ Campaign stopped by user at ${i}/${recipients.length} emails`);
         break;
       }
@@ -522,8 +612,8 @@ async function sendEmailsAsync(
         console.log(`⏸️ Campaign paused at ${i}/${recipients.length} emails. Waiting...`);
         await sleep(2000);
         const latestDb = await syncStatusFromDb();
-        const newStatus = getCampaignStatus();
-        if (newStatus.status === 'stopped' || newStatus.isRunning === false || latestDb === 'stopped') {
+        const newStatus = getCurrentCampaign();
+        if (!newStatus || newStatus.status === 'stopped' || newStatus.isRunning === false || latestDb === 'stopped') {
           console.log(`⏹️ Campaign stopped while paused at ${i}/${recipients.length} emails`);
           break;
         }
@@ -534,7 +624,7 @@ async function sendEmailsAsync(
       }
 
       // Double-check continuation after pause handling
-      const finalStatus = getCampaignStatus();
+      const finalStatus = getCurrentCampaign();
       if (finalStatus.status === 'stopped' || finalStatus.isRunning === false) {
         console.log(`⏹️ Campaign stopped after pause check at ${i}/${recipients.length} emails`);
         break;
@@ -586,7 +676,7 @@ async function sendEmailsAsync(
         senderStats[senderEmail].successful++;
 
         // Add email detail for real-time tracking
-        addEmailDetail({
+        addEmailDetailToCampaign(campaignId, {
           timestamp: new Date().toISOString(),
           recipient: recipient.email,
           subject: subject,
@@ -613,7 +703,7 @@ async function sendEmailsAsync(
         console.log(`OK ${recipient.email} via ${senderEmail} (${senderDisplayName}) — status: 202 (${stats.sent}/${recipients.length})`);
 
         // Update campaign status in real-time
-        updateCampaignStatus({
+        updateCampaignInstance(campaignId, {
           sent: stats.sent,
           successful: stats.successful,
           failed: stats.failed
@@ -638,7 +728,7 @@ async function sendEmailsAsync(
         senderStats[senderEmail].failed++;
 
         // Add failed email detail
-        addEmailDetail({
+        addEmailDetailToCampaign(campaignId, {
           timestamp: new Date().toISOString(),
           recipient: recipient.email,
           subject: subject,
@@ -667,7 +757,7 @@ async function sendEmailsAsync(
         console.log(`❌ FAILED ${recipient.email} via ${senderEmail} (${senderDisplayName}) — error: ${error.message} (${stats.sent}/${recipients.length})`);
 
         // Update campaign status
-        updateCampaignStatus({
+        updateCampaignInstance(campaignId, {
           sent: stats.sent,
           successful: stats.successful,
           failed: stats.failed
@@ -756,7 +846,7 @@ async function sendEmailsAsync(
     console.log(`   Success Rate: ${((stats.successful / recipients.length) * 100).toFixed(1)}%`);
 
     // Mark campaign as completed
-    completeCampaign();
+    completeCampaignInstance(campaignId);
 
     // Persist final campaign status
     if (campaignId) {
