@@ -285,13 +285,13 @@ export function calculateHumanLikeDelay(
 
   if (progress < 0.3) {
     // Early phase: Variable but generally quick
-    baseDelay = 30000 + Math.random() * 45000; // 30-75 seconds
+    baseDelay = 60000 + Math.random() * 60000; // 1-2 minutes
   } else if (progress < 0.7) {
     // Middle phase: More consistent timing
-    baseDelay = 45000 + Math.random() * 30000; // 45-75 seconds
+    baseDelay = 90000 + Math.random() * 60000; // 1.5-2.5 minutes
   } else {
     // Final phase: Slower and more varied
-    baseDelay = 60000 + Math.random() * 60000; // 60-120 seconds
+    baseDelay = 120000 + Math.random() * 120000; // 2-4 minutes
   }
 
   // ANTI-PATTERN DETECTION: Avoid too-regular intervals
@@ -327,7 +327,7 @@ export function calculateHumanLikeDelay(
 
   // BOUNDS: Ensure delays are within reasonable bounds
   const delayWithJitter = finalDelay + jitter;
-  const minDelay = emailIndex < 10 ? 8000 : 15000; // First 10 emails can be faster
+  const minDelay = emailIndex < 10 ? 30000 : 45000; // First 10 emails: 30s min, others: 45s min
   const maxDelay = 1200000; // 20 minutes maximum
 
   return Math.max(minDelay, Math.min(maxDelay, delayWithJitter));
