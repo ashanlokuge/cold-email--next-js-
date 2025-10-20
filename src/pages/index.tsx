@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import Head from 'next/head';
 import Layout from '@/components/Layout';
 import Sidebar from '@/components/Sidebar';
 import ComposeSection from '@/components/sections/ComposeSection';
@@ -13,13 +14,13 @@ import type { TimezoneConfig } from '@/types';
 
 function Home() {
   const [activeSection, setActiveSection] = useState('compose');
-  
+
   // Shared state for recipients across all components
   const [recipients, setRecipients] = useState([]);
-  
+
   // Shared state for senders across all components
   const [senders, setSenders] = useState<string[]>([]);
-  
+
   // Shared state for templates across all components
   const [templates, setTemplates] = useState([]);
 
@@ -59,7 +60,7 @@ function Home() {
   const renderActiveSection = () => {
     switch (activeSection) {
       case 'compose':
-        return <ComposeSection 
+        return <ComposeSection
           recipients={recipients}
           senders={senders}
           templates={templates}
@@ -71,24 +72,24 @@ function Home() {
       case 'campaigns':
         return <CampaignsHistorySection />;
       case 'recipients':
-        return <RecipientsSection 
+        return <RecipientsSection
           recipients={recipients}
           setRecipients={setRecipients}
         />;
       case 'senders':
-        return <SendersSection 
+        return <SendersSection
           senders={senders}
           setSenders={setSenders}
         />;
       case 'templates':
-        return <TemplatesSection 
+        return <TemplatesSection
           templates={templates}
           setTemplates={setTemplates}
         />;
       case 'user-management':
         return <UserManagementSection />;
       default:
-        return <ComposeSection 
+        return <ComposeSection
           recipients={recipients}
           senders={senders}
           templates={templates}
@@ -100,7 +101,11 @@ function Home() {
 
   return (
     <Layout>
-      <Sidebar 
+      <Head>
+        <title>Dashboard - ColdSendz</title>
+        <meta name="description" content="Manage your cold email campaigns, track analytics, and optimize your outreach strategy" />
+      </Head>
+      <Sidebar
         activeSection={activeSection}
         onSectionChange={setActiveSection}
       />
