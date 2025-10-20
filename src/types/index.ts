@@ -1,6 +1,7 @@
 export interface Recipient {
   email: string;
   name?: string;
+  company?: string;
 }
 
 export interface Sender {
@@ -69,9 +70,11 @@ export interface CSVPreview {
   totalRows: number;
   emailColumn?: string;
   nameColumn?: string;
+  companyColumn?: string;
   suggestions: {
     emailColumns: string[];
     nameColumns: string[];
+    companyColumns: string[];
   };
 }
 
