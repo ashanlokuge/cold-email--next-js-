@@ -96,11 +96,11 @@ export default async function handler(
     }
 
     // Update campaign status
-    await campaignRepository.updateCampaignProgress(campaignId, {
+    await campaignRepository.updateCampaignProgress(campaignId, ({
       status: 'running',
       totalChunks: chunks.length,
       completedChunks: 0
-    });
+    } as any));
 
     console.log(`✅ Scheduled ${chunks.length} chunks for campaign ${campaignId}`);
 

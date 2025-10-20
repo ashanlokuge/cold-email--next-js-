@@ -134,9 +134,9 @@ async function processEmailChunk(
         }
       }
 
-      // Personalize content
-      const personalizedSubject = personalizeContent(subject, recipient, senderDisplayName);
-      const personalizedText = personalizeContent(text, recipient, senderDisplayName);
+  // Personalize content (personalizeContent signature: content, recipient, recipientIndex?, senderEmail?, senderDisplayName?)
+  const personalizedSubject = personalizeContent(subject, recipient, 0, senderEmail, senderDisplayName);
+  const personalizedText = personalizeContent(text, recipient, 0, senderEmail, senderDisplayName);
 
       // Create email message
       const emailMessage = {
@@ -153,8 +153,8 @@ async function processEmailChunk(
         }
       };
 
-      // Send email
-      const result = await emailClient.beginSend(emailMessage);
+  // Send email (cast to any to avoid strict SDK type mismatch in serverless environment)
+  const result = await (emailClient as any).beginSend(emailMessage as any);
 
       // Update statistics
       stats.sent++;

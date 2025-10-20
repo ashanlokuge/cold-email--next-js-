@@ -59,22 +59,22 @@ export default function AnalyticsSection() {
   // Separate timer for duration display (updates every 1 second)
   useEffect(() => {
     let durationInterval: NodeJS.Timeout;
-    
+
     if (campaignStatus.isRunning && campaignStatus.startTime) {
       const updateDuration = () => {
         const elapsed = Date.now() - campaignStatus.startTime!;
         setCurrentDuration(elapsed);
       };
-      
+
       // Update immediately
       updateDuration();
-      
+
       // Then update every second
       durationInterval = setInterval(updateDuration, 1000);
     } else {
       setCurrentDuration(0);
     }
-    
+
     return () => {
       if (durationInterval) clearInterval(durationInterval);
     };
@@ -88,25 +88,25 @@ export default function AnalyticsSection() {
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    
+
     // Define fetch functions inside useEffect to avoid stale closures
     const fetchCampaignStatus = async () => {
       try {
         console.log('🔄 Polling campaign status at', new Date().toLocaleTimeString()); // Enhanced debug
-        
+
         const token = localStorage.getItem('token');
         const headers: HeadersInit = {};
         if (token) {
           headers['Authorization'] = `Bearer ${token}`;
         }
-        
+
         const response = await fetch('/api/campaigns/multi-status', { headers });
-        
+
         if (response.ok) {
           const data = await response.json();
           console.log('📡 Fetched multi-campaign status:', data); // Debug log
           console.log('📊 Running campaigns:', data.runningCampaigns?.length || 0); // Enhanced debug
-          
+
           // Use the primary campaign status for backward compatibility
           const status = {
             isRunning: data.isRunning,
@@ -115,6 +115,7 @@ export default function AnalyticsSection() {
             successful: data.successful,
             failed: data.failed,
             total: data.total,
+            subject: data.subject,
             completed: data.completed,
             startTime: data.startTime,
             status: data.status,
@@ -122,16 +123,16 @@ export default function AnalyticsSection() {
             nextEmailIn: data.nextEmailIn,
             lastDelay: data.lastDelay
           };
-          
+
           // Update multi-campaign data
           setRunningCampaigns(data.runningCampaigns || []);
           setAllCampaigns(data.allCampaigns || []);
           setCampaignStats(data.stats || null);
-          
+
           setCampaignStatus(prevStatus => {
             console.log('🔄 Previous status:', prevStatus); // Debug previous state
             console.log('🆕 New status:', status); // Debug new state
-            
+
             // Check if campaign just completed or started (prevent spam)
             const wasRunning = prevStatus.isRunning;
             const wasCompleted = prevStatus.completed;
@@ -139,9 +140,9 @@ export default function AnalyticsSection() {
             const isNowCompleted = !status.isRunning && status.completed && wasRunning;
             const justStarted = status.isRunning && !wasRunning && !wasCompleted;
             const progressChanged = status.isRunning && status.sent > wasSent;
-            
+
             console.log('🔍 State changes - justStarted:', justStarted, 'progressChanged:', progressChanged, 'isNowCompleted:', isNowCompleted);
-            
+
             // Add activity log entry only for actual state changes
             if (justStarted) {
               addToActivityLog(`🚀 Starting campaign: "${status.campaignName}" to ${status.total} recipients`);
@@ -150,7 +151,7 @@ export default function AnalyticsSection() {
               addToActivityLog(`📈 Progress: ${status.sent}/${status.total} emails sent`);
             } else if (isNowCompleted) {
               addToActivityLog(`🎉 Campaign "${status.campaignName}" completed! ${status.successful}/${status.sent} emails sent successfully`);
-              
+
               // Save completed campaign to history (like original HTML/JS project)
               const campaignData: CampaignHistory = {
                 name: status.campaignName || 'Unknown Campaign',
@@ -162,11 +163,11 @@ export default function AnalyticsSection() {
                 timestamp: new Date().toLocaleString(),
                 totalRecipients: status.total
               };
-              
+
               saveCampaignToHistory(campaignData);
               addToActivityLog(`💾 Campaign data saved to history`);
             }
-            
+
             return status;
           });
         }
@@ -179,7 +180,7 @@ export default function AnalyticsSection() {
       try {
         console.log('📧 Polling email details at', new Date().toLocaleTimeString()); // Enhanced debug
         const response = await fetch('/api/email-details');
-        
+
         if (response.ok) {
           const details = await response.json();
           console.log('📧 Fetched email details:', details.length, 'entries'); // Debug log
@@ -197,13 +198,13 @@ export default function AnalyticsSection() {
       await fetchEmailDetails();
       console.log('✅ Data fetch cycle completed at', new Date().toLocaleTimeString()); // Enhanced debug
     };
-    
+
     // Start polling immediately
     console.log('🚀 Starting real-time polling for campaign updates'); // Enhanced debug
     fetchData();
-    
+
     interval = setInterval(fetchData, 1500);
-    
+
     return () => {
       console.log('🛑 Stopping real-time polling'); // Enhanced debug
       if (interval) clearInterval(interval);
@@ -216,7 +217,7 @@ export default function AnalyticsSection() {
       const response = await fetch('/api/campaigns/status');
       if (response.ok) {
         const status = await response.json();
-        
+
         if (status.isRunning) {
           // Restore campaign stats for polling (like original)
           const restoredStatus: CampaignStatus = {
@@ -230,9 +231,9 @@ export default function AnalyticsSection() {
             startTime: Date.now() - (status.duration || 0), // Approximate start time
             subject: status.subject || 'Unknown Subject'
           };
-          
+
           setCampaignStatus(restoredStatus);
-          
+
           // Add activity log entries about reconnection
           addToActivityLog(`✅ Reconnected to running campaign: "${status.campaignName}"`);
           addToActivityLog(`📊 Current progress: ${status.sent}/${status.total} emails sent`);
@@ -263,12 +264,12 @@ export default function AnalyticsSection() {
     try {
       const history = JSON.parse(localStorage.getItem('campaignHistory') || '[]');
       history.unshift(campaignData);
-      
+
       // Keep only last 10 campaigns
       if (history.length > 10) {
         history.splice(10);
       }
-      
+
       localStorage.setItem('campaignHistory', JSON.stringify(history));
       setCampaignHistory(history);
     } catch (error) {
@@ -342,10 +343,12 @@ export default function AnalyticsSection() {
   };
 
   // Campaign control functions
-  const pauseCampaign = async (campaignId?: string) => {
+  const pauseCampaign = async (arg?: any) => {
+    // arg may be a MouseEvent when used as onClick, or a campaignId when called directly
+    const campaignId = typeof arg === 'string' ? arg : undefined;
     try {
       const body = campaignId ? { campaignId } : {};
-      const response = await fetch('/api/campaigns/pause', { 
+      const response = await fetch('/api/campaigns/pause', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -359,10 +362,11 @@ export default function AnalyticsSection() {
     }
   };
 
-  const resumeCampaign = async (campaignId?: string) => {
+  const resumeCampaign = async (arg?: any) => {
+    const campaignId = typeof arg === 'string' ? arg : undefined;
     try {
       const body = campaignId ? { campaignId } : {};
-      const response = await fetch('/api/campaigns/resume', { 
+      const response = await fetch('/api/campaigns/resume', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -376,10 +380,11 @@ export default function AnalyticsSection() {
     }
   };
 
-  const stopCampaign = async (campaignId?: string) => {
+  const stopCampaign = async (arg?: any) => {
+    const campaignId = typeof arg === 'string' ? arg : undefined;
     try {
       const body = campaignId ? { campaignId } : {};
-      const response = await fetch('/api/campaigns/stop', { 
+      const response = await fetch('/api/campaigns/stop', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -422,7 +427,7 @@ export default function AnalyticsSection() {
           Monitor your email campaign performance and real-time metrics
         </p>
       </div>
-      
+
       <div className="space-y-8">
         {/* Current Campaign Status */}
         <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-soft border border-gray-200/60 p-8">
@@ -443,15 +448,15 @@ export default function AnalyticsSection() {
               <p className="text-gray-600">Real-time campaign monitoring</p>
             </div>
           </div>
-          
+
           <div className="mb-8">
             <div className="flex justify-between items-center mb-4">
               <div>
                 <span className="text-lg font-semibold text-gray-800">
-                  {campaignStatus.isRunning 
-                    ? `"${campaignStatus.campaignName}": Sending ${campaignStatus.sent} of ${campaignStatus.total} emails...` 
-                    : campaignStatus.completed 
-                      ? `"${campaignStatus.campaignName}" completed: ${campaignStatus.sent}/${campaignStatus.total}` 
+                  {campaignStatus.isRunning
+                    ? `"${campaignStatus.campaignName}": Sending ${campaignStatus.sent} of ${campaignStatus.total} emails...`
+                    : campaignStatus.completed
+                      ? `"${campaignStatus.campaignName}" completed: ${campaignStatus.sent}/${campaignStatus.total}`
                       : 'No active campaign'
                   }
                 </span>
@@ -490,7 +495,7 @@ export default function AnalyticsSection() {
               </div>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-4 shadow-inner">
-              <div 
+              <div
                 className="bg-gradient-to-r from-primary-500 to-accent-500 h-4 rounded-full transition-all duration-500 shadow-sm"
                 style={{ width: `${getProgressPercentage()}%` }}
               ></div>
@@ -503,11 +508,10 @@ export default function AnalyticsSection() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
                   <div className="flex items-center space-x-2">
-                    <div className={`w-4 h-4 rounded-full ${
-                      campaignStatus.status === 'running' ? 'bg-green-500 animate-pulse' : 
-                      campaignStatus.status === 'paused' ? 'bg-yellow-500' :
-                      'bg-red-500'
-                    }`}></div>
+                    <div className={`w-4 h-4 rounded-full ${campaignStatus.status === 'running' ? 'bg-green-500 animate-pulse' :
+                        campaignStatus.status === 'paused' ? 'bg-yellow-500' :
+                          'bg-red-500'
+                      }`}></div>
                     <span className="text-lg font-semibold text-gray-700">
                       Campaign Control
                     </span>
@@ -516,7 +520,7 @@ export default function AnalyticsSection() {
                     Status: <span className="font-medium text-gray-700 capitalize">{campaignStatus.status || 'running'}</span>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center space-x-3">
                   {campaignStatus.status === 'running' ? (
                     <button
@@ -535,19 +539,19 @@ export default function AnalyticsSection() {
                       className="group relative flex items-center space-x-2 bg-white hover:bg-green-50 text-green-700 px-6 py-3 rounded-xl font-medium transition-all duration-300 border border-green-200 hover:border-green-300 shadow-sm hover:shadow-md transform hover:scale-105"
                     >
                       <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M8 5v14l11-7z"/>
+                        <path d="M8 5v14l11-7z" />
                       </svg>
                       <span>Resume Campaign</span>
                       <div className="absolute inset-0 bg-green-100 rounded-xl opacity-0 group-hover:opacity-20 transition-opacity duration-300"></div>
                     </button>
                   ) : null}
-                  
+
                   <button
                     onClick={stopCampaign}
                     className="group relative flex items-center space-x-2 bg-white hover:bg-red-50 text-red-700 px-6 py-3 rounded-xl font-medium transition-all duration-300 border border-red-200 hover:border-red-300 shadow-sm hover:shadow-md transform hover:scale-105"
                   >
                     <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M6 6h12v12H6z"/>
+                      <path d="M6 6h12v12H6z" />
                     </svg>
                     <span>Stop Campaign</span>
                     <div className="absolute inset-0 bg-red-100 rounded-xl opacity-0 group-hover:opacity-20 transition-opacity duration-300"></div>
@@ -625,19 +629,18 @@ export default function AnalyticsSection() {
                 </div>
                 <div>
                   <div className="flex items-center justify-center space-x-2 mb-2">
-                    <div className={`w-3 h-3 rounded-full ${
-                      campaignStatus.status === 'running' ? 'bg-green-500 animate-pulse' : 
-                      campaignStatus.status === 'paused' ? 'bg-yellow-500' :
-                      campaignStatus.status === 'stopped' ? 'bg-red-500' :
-                      campaignStatus.status === 'completed' ? 'bg-blue-500' :
-                      'bg-gray-400'
-                    }`}></div>
+                    <div className={`w-3 h-3 rounded-full ${campaignStatus.status === 'running' ? 'bg-green-500 animate-pulse' :
+                        campaignStatus.status === 'paused' ? 'bg-yellow-500' :
+                          campaignStatus.status === 'stopped' ? 'bg-red-500' :
+                            campaignStatus.status === 'completed' ? 'bg-blue-500' :
+                              'bg-gray-400'
+                      }`}></div>
                     <span className="text-lg font-bold text-gray-700">
                       {campaignStatus.status === 'running' ? 'Running' :
-                       campaignStatus.status === 'paused' ? 'Paused' :
-                       campaignStatus.status === 'stopped' ? 'Stopped' :
-                       campaignStatus.status === 'completed' ? 'Completed' :
-                       'Idle'}
+                        campaignStatus.status === 'paused' ? 'Paused' :
+                          campaignStatus.status === 'stopped' ? 'Stopped' :
+                            campaignStatus.status === 'completed' ? 'Completed' :
+                              'Idle'}
                     </span>
                   </div>
                   <div className="text-sm text-gray-600">Campaign Status</div>
@@ -667,11 +670,10 @@ export default function AnalyticsSection() {
                 <div key={campaign.campaignId} className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-2xl p-6 border border-gray-200/60">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center space-x-4">
-                      <div className={`w-3 h-3 rounded-full ${
-                        campaign.status === 'running' ? 'bg-green-500 animate-pulse' : 
-                        campaign.status === 'paused' ? 'bg-yellow-500' :
-                        'bg-red-500'
-                      }`}></div>
+                      <div className={`w-3 h-3 rounded-full ${campaign.status === 'running' ? 'bg-green-500 animate-pulse' :
+                          campaign.status === 'paused' ? 'bg-yellow-500' :
+                            'bg-red-500'
+                        }`}></div>
                       <div>
                         <h3 className="text-lg font-semibold text-gray-800">{campaign.campaignName}</h3>
                         <p className="text-sm text-gray-600">Status: {campaign.status}</p>
@@ -686,9 +688,9 @@ export default function AnalyticsSection() {
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="w-full bg-gray-200 rounded-full h-3 mb-4">
-                    <div 
+                    <div
                       className="bg-gradient-to-r from-green-500 to-green-600 h-3 rounded-full transition-all duration-500"
                       style={{ width: `${Math.round((campaign.sent / campaign.total) * 100)}%` }}
                     ></div>
@@ -755,7 +757,7 @@ export default function AnalyticsSection() {
               </div>
             </div>
           </div>
-          
+
           <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 h-80 overflow-y-auto">
             {emailDetails.length === 0 ? (
               <div className="text-center text-gray-500 py-16">
@@ -781,13 +783,13 @@ export default function AnalyticsSection() {
                     </div>
                   </div>
                 )}
-                
+
                 {/* Email Details List */}
                 <div className="space-y-1">
                   {emailDetails.map((detail, index) => {
                     const timestamp = new Date(detail.timestamp).toLocaleTimeString();
                     const isSuccess = detail.status === 'success';
-                    
+
                     return (
                       <div key={index} className="flex items-center space-x-3 p-2 text-sm font-mono bg-white rounded border hover:bg-gray-50 transition-colors">
                         <span className="text-gray-500 text-xs min-w-[80px]">[{timestamp}]</span>
@@ -834,7 +836,7 @@ export default function AnalyticsSection() {
               </button>
             </div>
           </div>
-          
+
           <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 h-60 overflow-y-auto">
             {activityLog.length === 0 ? (
               <div className="text-center text-gray-500 py-12">

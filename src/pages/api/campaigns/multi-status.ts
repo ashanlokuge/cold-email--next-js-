@@ -13,7 +13,7 @@ export default async function handler(
   try {
     // Get user from token
     const token = req.headers.authorization?.replace('Bearer ', '');
-    
+
     if (!token) {
       return res.status(401).json({ error: 'Authentication required' });
     }
@@ -48,7 +48,7 @@ export default async function handler(
       campaignId: primaryCampaign?.campaignId || null,
       nextEmailIn: primaryCampaign?.nextEmailIn || null,
       lastDelay: primaryCampaign?.lastDelay || null,
-      
+
       // Multi-campaign data
       allCampaigns: allCampaigns.map(campaign => ({
         campaignId: campaign.campaignId,
@@ -67,7 +67,7 @@ export default async function handler(
         nextEmailIn: campaign.nextEmailIn,
         lastDelay: campaign.lastDelay
       })),
-      
+
       runningCampaigns: runningCampaigns.map(campaign => ({
         campaignId: campaign.campaignId,
         campaignName: campaign.campaignName,
@@ -81,7 +81,7 @@ export default async function handler(
         nextEmailIn: campaign.nextEmailIn,
         lastDelay: campaign.lastDelay
       })),
-      
+
       // Statistics
       stats: {
         totalCampaigns: stats.totalCampaigns,

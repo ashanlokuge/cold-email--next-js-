@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { pauseCampaignInstance, getCampaignInstance } from '@/lib/multiCampaignManager';
+import { pauseCampaignInstance, getCampaignInstance, getCampaignStatus } from '@/lib/multiCampaignManager';
 import { campaignRepository } from '@/lib/campaignRepository';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -8,10 +8,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { campaignId } = req.body;
+    let { campaignId } = req.body as { campaignId?: string };
+
+    // If no campaignId provided, fall back to the primary running campaign
+    if (!campaignId) {
+      const primary = getCampaignStatus();
+      campaignId = primary?.campaignId ?? null;
+    }
 
     if (!campaignId) {
-      return res.status(400).json({ error: 'Campaign ID is required' });
+      return res.status(400).json({ error: 'Campaign ID is required and no active campaign found' });
     }
 
     const campaign = getCampaignInstance(campaignId);

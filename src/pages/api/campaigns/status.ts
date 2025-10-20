@@ -26,7 +26,7 @@ export default async function handler(
 
     // Get campaign status (will return the first running campaign for backward compatibility)
     const status = getCampaignStatus();
-    
+
     // If no running campaign and user is authenticated, check for any user campaigns
     if (!status.isRunning && userId) {
       // Return empty status for authenticated users with no running campaigns
