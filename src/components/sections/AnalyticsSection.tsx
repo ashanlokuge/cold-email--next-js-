@@ -52,6 +52,9 @@ export default function AnalyticsSection() {
   const [activityLog, setActivityLog] = useState<string[]>([]);
   const [campaignHistory, setCampaignHistory] = useState<CampaignHistory[]>([]);
   const [currentDuration, setCurrentDuration] = useState<number>(0);
+  const [runningCampaigns, setRunningCampaigns] = useState<any[]>([]);
+  const [allCampaigns, setAllCampaigns] = useState<any[]>([]);
+  const [campaignStats, setCampaignStats] = useState<any>(null);
 
   // Separate timer for duration display (updates every 1 second)
   useEffect(() => {
@@ -90,12 +93,40 @@ export default function AnalyticsSection() {
     const fetchCampaignStatus = async () => {
       try {
         console.log('🔄 Polling campaign status at', new Date().toLocaleTimeString()); // Enhanced debug
-        const response = await fetch('/api/campaigns/status');
+        
+        const token = localStorage.getItem('token');
+        const headers: HeadersInit = {};
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        
+        const response = await fetch('/api/campaigns/multi-status', { headers });
         
         if (response.ok) {
-          const status = await response.json();
-          console.log('📡 Fetched campaign status:', status); // Debug log
-          console.log('📊 Current campaign running:', status.isRunning, 'Sent:', status.sent); // Enhanced debug
+          const data = await response.json();
+          console.log('📡 Fetched multi-campaign status:', data); // Debug log
+          console.log('📊 Running campaigns:', data.runningCampaigns?.length || 0); // Enhanced debug
+          
+          // Use the primary campaign status for backward compatibility
+          const status = {
+            isRunning: data.isRunning,
+            campaignName: data.campaignName,
+            sent: data.sent,
+            successful: data.successful,
+            failed: data.failed,
+            total: data.total,
+            completed: data.completed,
+            startTime: data.startTime,
+            status: data.status,
+            campaignId: data.campaignId,
+            nextEmailIn: data.nextEmailIn,
+            lastDelay: data.lastDelay
+          };
+          
+          // Update multi-campaign data
+          setRunningCampaigns(data.runningCampaigns || []);
+          setAllCampaigns(data.allCampaigns || []);
+          setCampaignStats(data.stats || null);
           
           setCampaignStatus(prevStatus => {
             console.log('🔄 Previous status:', prevStatus); // Debug previous state
@@ -311,11 +342,16 @@ export default function AnalyticsSection() {
   };
 
   // Campaign control functions
-  const pauseCampaign = async () => {
+  const pauseCampaign = async (campaignId?: string) => {
     try {
-      const response = await fetch('/api/campaigns/pause', { method: 'POST' });
+      const body = campaignId ? { campaignId } : {};
+      const response = await fetch('/api/campaigns/pause', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
       if (response.ok) {
-        addToActivityLog('⏸️ Campaign paused by user');
+        addToActivityLog(`⏸️ Campaign ${campaignId ? `"${campaignId}"` : ''} paused by user`);
       }
     } catch (error) {
       console.error('Error pausing campaign:', error);
@@ -323,11 +359,16 @@ export default function AnalyticsSection() {
     }
   };
 
-  const resumeCampaign = async () => {
+  const resumeCampaign = async (campaignId?: string) => {
     try {
-      const response = await fetch('/api/campaigns/resume', { method: 'POST' });
+      const body = campaignId ? { campaignId } : {};
+      const response = await fetch('/api/campaigns/resume', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
       if (response.ok) {
-        addToActivityLog('▶️ Campaign resumed by user');
+        addToActivityLog(`▶️ Campaign ${campaignId ? `"${campaignId}"` : ''} resumed by user`);
       }
     } catch (error) {
       console.error('Error resuming campaign:', error);
@@ -335,11 +376,16 @@ export default function AnalyticsSection() {
     }
   };
 
-  const stopCampaign = async () => {
+  const stopCampaign = async (campaignId?: string) => {
     try {
-      const response = await fetch('/api/campaigns/stop', { method: 'POST' });
+      const body = campaignId ? { campaignId } : {};
+      const response = await fetch('/api/campaigns/stop', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
       if (response.ok) {
-        addToActivityLog('⏹️ Campaign stopped by user');
+        addToActivityLog(`⏹️ Campaign ${campaignId ? `"${campaignId}"` : ''} stopped by user`);
       }
     } catch (error) {
       console.error('Error stopping campaign:', error);
@@ -600,6 +646,99 @@ export default function AnalyticsSection() {
             </div>
           )}
         </div>
+
+        {/* Multiple Running Campaigns */}
+        {runningCampaigns.length > 0 && (
+          <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-soft border border-gray-200/60 p-8">
+            <div className="flex items-center space-x-4 mb-8">
+              <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-2xl flex items-center justify-center shadow-green">
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-gray-800">Running Campaigns ({runningCampaigns.length})</h2>
+                <p className="text-gray-600">Multiple campaigns running simultaneously</p>
+              </div>
+            </div>
+
+            <div className="grid gap-6">
+              {runningCampaigns.map((campaign, index) => (
+                <div key={campaign.campaignId} className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-2xl p-6 border border-gray-200/60">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center space-x-4">
+                      <div className={`w-3 h-3 rounded-full ${
+                        campaign.status === 'running' ? 'bg-green-500 animate-pulse' : 
+                        campaign.status === 'paused' ? 'bg-yellow-500' :
+                        'bg-red-500'
+                      }`}></div>
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-800">{campaign.campaignName}</h3>
+                        <p className="text-sm text-gray-600">Status: {campaign.status}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-2xl font-bold text-green-600">
+                        {Math.round((campaign.sent / campaign.total) * 100)}%
+                      </span>
+                      <div className="text-sm text-gray-500">
+                        {campaign.sent}/{campaign.total} emails
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="w-full bg-gray-200 rounded-full h-3 mb-4">
+                    <div 
+                      className="bg-gradient-to-r from-green-500 to-green-600 h-3 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.round((campaign.sent / campaign.total) * 100)}%` }}
+                    ></div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4 text-center">
+                    <div className="bg-white rounded-lg p-3 border border-gray-200">
+                      <div className="text-lg font-bold text-green-600">{campaign.successful}</div>
+                      <div className="text-xs text-gray-600">Successful</div>
+                    </div>
+                    <div className="bg-white rounded-lg p-3 border border-gray-200">
+                      <div className="text-lg font-bold text-red-600">{campaign.failed}</div>
+                      <div className="text-xs text-gray-600">Failed</div>
+                    </div>
+                    <div className="bg-white rounded-lg p-3 border border-gray-200">
+                      <div className="text-lg font-bold text-blue-600">
+                        {Math.round((campaign.successful / campaign.sent) * 100) || 0}%
+                      </div>
+                      <div className="text-xs text-gray-600">Success Rate</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex space-x-2">
+                    <button
+                      onClick={() => pauseCampaign(campaign.campaignId)}
+                      disabled={campaign.status !== 'running'}
+                      className="flex-1 bg-yellow-100 hover:bg-yellow-200 disabled:bg-gray-100 disabled:text-gray-400 text-yellow-700 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 border border-yellow-200"
+                    >
+                      ⏸️ Pause
+                    </button>
+                    <button
+                      onClick={() => resumeCampaign(campaign.campaignId)}
+                      disabled={campaign.status !== 'paused'}
+                      className="flex-1 bg-green-100 hover:bg-green-200 disabled:bg-gray-100 disabled:text-gray-400 text-green-700 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 border border-green-200"
+                    >
+                      ▶️ Resume
+                    </button>
+                    <button
+                      onClick={() => stopCampaign(campaign.campaignId)}
+                      disabled={campaign.status === 'stopped'}
+                      className="flex-1 bg-red-100 hover:bg-red-200 disabled:bg-gray-100 disabled:text-gray-400 text-red-700 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 border border-red-200"
+                    >
+                      ⏹️ Stop
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Real-time Email Sending Details */}
         <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-soft border border-gray-200/60 p-8">

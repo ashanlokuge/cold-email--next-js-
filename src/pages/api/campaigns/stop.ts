@@ -20,7 +20,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     stopCampaignInstance(campaignId);
-    
+
     // Persist to DB
     try {
       await campaignRepository.updateCampaignProgress(campaignId, {
@@ -32,9 +32,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     console.log(`⏹️ Campaign ${campaignId} stopped via API`);
-    
-    res.status(200).json({ 
-      success: true, 
+
+    res.status(200).json({
+      success: true,
       message: 'Campaign stopped successfully',
       campaignId,
       status: 'stopped'

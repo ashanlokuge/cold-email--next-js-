@@ -160,12 +160,12 @@ export function removeCampaignInstance(campaignId: string): void {
 export function getCampaignStatistics(userId: string) {
   const allCampaigns = getAllCampaignsForUser(userId);
   const runningCampaigns = getRunningCampaignsForUser(userId);
-  
+
   const totalEmails = allCampaigns.reduce((sum, c) => sum + c.total, 0);
   const totalSent = allCampaigns.reduce((sum, c) => sum + c.sent, 0);
   const totalSuccessful = allCampaigns.reduce((sum, c) => sum + c.successful, 0);
   const totalFailed = allCampaigns.reduce((sum, c) => sum + c.failed, 0);
-  
+
   return {
     totalCampaigns: allCampaigns.length,
     runningCampaigns: runningCampaigns.length,
@@ -183,7 +183,7 @@ export function getCampaignStatus() {
   // Return the first running campaign for backward compatibility
   const runningCampaign = Array.from(multiCampaignState.campaigns.values())
     .find(c => c.isRunning);
-  
+
   if (runningCampaign) {
     return {
       isRunning: runningCampaign.isRunning,
@@ -201,7 +201,7 @@ export function getCampaignStatus() {
       campaignId: runningCampaign.campaignId
     };
   }
-  
+
   // Return default status if no running campaigns
   return {
     isRunning: false,
@@ -221,7 +221,7 @@ export function updateCampaignStatus(updates: Partial<CampaignInstance>): void {
   // Update the first running campaign for backward compatibility
   const runningCampaign = Array.from(multiCampaignState.campaigns.values())
     .find(c => c.isRunning);
-  
+
   if (runningCampaign && updates.campaignId) {
     updateCampaignInstance(updates.campaignId, updates);
   }
@@ -231,7 +231,7 @@ export function addEmailDetail(emailDetail: EmailDetail): void {
   // Add to the first running campaign for backward compatibility
   const runningCampaign = Array.from(multiCampaignState.campaigns.values())
     .find(c => c.isRunning);
-  
+
   if (runningCampaign) {
     addEmailDetailToCampaign(runningCampaign.campaignId, emailDetail);
   }
@@ -241,7 +241,7 @@ export function completeCampaign(): void {
   // Complete the first running campaign for backward compatibility
   const runningCampaign = Array.from(multiCampaignState.campaigns.values())
     .find(c => c.isRunning);
-  
+
   if (runningCampaign) {
     completeCampaignInstance(runningCampaign.campaignId);
   }

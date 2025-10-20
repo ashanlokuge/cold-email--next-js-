@@ -318,7 +318,7 @@ async function sendEmailsAsync(
   const syncStatusFromDb = async (): Promise<'running' | 'paused' | 'stopped' | 'completed' | null> => {
     const dbStatus = await fetchDbStatus();
     if (!dbStatus || !campaignId) return null;
-    
+
     const local = getCurrentCampaign();
     if (local && dbStatus !== local.status) {
       if (dbStatus === 'paused') {
@@ -326,10 +326,10 @@ async function sendEmailsAsync(
       } else if (dbStatus === 'running') {
         updateCampaignInstance(campaignId, { status: 'running', isRunning: true });
       } else if (dbStatus === 'stopped' || dbStatus === 'completed') {
-        updateCampaignInstance(campaignId, { 
-          status: dbStatus, 
-          isRunning: false, 
-          completed: dbStatus === 'completed' 
+        updateCampaignInstance(campaignId, {
+          status: dbStatus,
+          isRunning: false,
+          completed: dbStatus === 'completed'
         });
       }
     }
