@@ -26,7 +26,7 @@ export default async function handler(
       return res.status(401).json({ error: 'Invalid token' });
     }
 
-    // Get all campaigns for the user
+    // Get all campaigns for the users
     const allCampaigns = getAllCampaignsForUser(userId);
     const runningCampaigns = getRunningCampaignsForUser(userId);
     const stats = getCampaignStatistics(userId);

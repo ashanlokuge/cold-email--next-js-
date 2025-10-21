@@ -19,7 +19,7 @@ export default async function handler(
       senders,
       selectedSenders,
       timezoneConfig,
-      chunkSize = 10 // Default chunk size
+      chunkSize = 10 // Default chunk sizeut
     } = req.body;
 
     if (!campaignId || !recipients || !Array.isArray(recipients)) {

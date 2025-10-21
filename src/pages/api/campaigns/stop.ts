@@ -10,7 +10,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     let { campaignId } = req.body as { campaignId?: string };
 
-    // If no campaignId provided, fall back to primary running campaign
+    // If no campaignId provided, fall back to primary running campaignyg
     if (!campaignId) {
       const primary = getCampaignStatus();
       campaignId = primary?.campaignId ?? null;

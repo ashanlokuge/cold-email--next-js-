@@ -14,7 +14,7 @@ import {
 } from '@/lib/timezoneConfig';
 import jwt from 'jsonwebtoken';
 
-// API route configuration
+// API route configurationns
 export const config = {
   api: {
     bodyParser: {

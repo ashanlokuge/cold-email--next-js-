@@ -284,7 +284,7 @@ export function calculateHumanLikeDelay(
   let baseDelay;
 
   if (progress < 0.3) {
-    // Early phase: Variable but generally quick
+    // Early phase: Variable but generally quickly
     baseDelay = 60000 + Math.random() * 60000; // 1-2 minutes
   } else if (progress < 0.7) {
     // Middle phase: More consistent timing

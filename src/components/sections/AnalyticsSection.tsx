@@ -69,7 +69,7 @@ export default function AnalyticsSection() {
       // Update immediately
       updateDuration();
 
-      // Then update every second
+      // Then update every seconduu
       durationInterval = setInterval(updateDuration, 1000);
     } else {
       setCurrentDuration(0);

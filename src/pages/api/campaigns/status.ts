@@ -11,7 +11,7 @@ export default async function handler(
   }
 
   try {
-    // Get user from token for multi-campaign support
+    // Get user from token for multi-campaign supportyt
     const token = req.headers.authorization?.replace('Bearer ', '');
     let userId = null;
 
