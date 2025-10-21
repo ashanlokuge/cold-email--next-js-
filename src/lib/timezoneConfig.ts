@@ -240,7 +240,7 @@ export function isSendingAllowedToday(config: TimezoneConfig): boolean {
 }
 
 /**
- * Check if current time is within allowed sending window
+ * Check if current time is within allowed sending windowll
  */
 export function isWithinSendingWindow(config: TimezoneConfig): boolean {
   const currentHour = getCurrentHourInTimezone(config.targetTimezone);
