@@ -44,12 +44,25 @@ export default async function handler(
 
     console.log(`📦 Created ${chunks.length} chunks`);
 
+    // Optional scheduled start time (ISO string) - if provided, compute initial delay until that time
+    let initialDelay = 0;
+    if (req.body.scheduledStart) {
+      const scheduledStartTime = new Date(req.body.scheduledStart).getTime();
+      if (!isNaN(scheduledStartTime)) {
+        initialDelay = Math.max(0, scheduledStartTime - Date.now());
+        console.log(`⏱️ Scheduled start provided: ${req.body.scheduledStart} (initial delay ${Math.round(initialDelay/1000)}s)`);
+      } else {
+        console.warn('⚠️ Invalid scheduledStart provided; ignoring.');
+      }
+    }
+
     // Schedule chunks with delays
     const scheduledChunks = [];
 
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
-      const delay = i * 60000; // 1 minute delay between chunks
+      // Per-chunk offset (1 minute between chunks) plus initialDelay
+      const delay = initialDelay + i * 60000; // 1 minute delay between chunks
 
       scheduledChunks.push({
         chunkIndex: chunk.chunkIndex,
