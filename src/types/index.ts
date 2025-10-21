@@ -62,6 +62,8 @@ export interface EmailDetail {
   status: 'success' | 'failed';
   error?: string;
   sender: string;
+  campaignName?: string;
+  campaignId?: string;
 }
 
 export interface CSVPreview {

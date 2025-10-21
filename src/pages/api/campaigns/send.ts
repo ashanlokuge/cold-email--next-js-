@@ -38,6 +38,7 @@ export const config = {
   },
 }
 
+
 async function fetchSenders() {
   const senders: Array<{ email: string; displayName: string }> = [];
 
@@ -299,6 +300,22 @@ async function sendEmailsAsync(
   campaignId?: string | null,
   timezoneConfig?: TimezoneConfig | null
 ) {
+  // ⚙️ CONFIGURATION FOR VERCEL DEPLOYMENT
+  // Adjust these values based on your hosting platform:
+  // - Vercel Hobby: 10s max execution time
+  // - Vercel Pro: 60s max execution time  
+  // - Self-hosted: No limits
+  const PAUSE_CHECK_INTERVAL = 10000; // Check pause/resume every 10 seconds (was 2s)
+  const PAUSE_POLL_INTERVAL = 15000;  // While paused, check every 15 seconds (was 2s)
+  const DELAY_CHECK_INTERVAL = 5000;  // Check status during email delays every 5 seconds (was 2s)
+  
+  console.log('📌 Campaign execution configuration:', {
+    pauseCheckInterval: `${PAUSE_CHECK_INTERVAL/1000}s`,
+    pausePollInterval: `${PAUSE_POLL_INTERVAL/1000}s`,
+    delayCheckInterval: `${DELAY_CHECK_INTERVAL/1000}s`,
+    platform: 'Optimized for Vercel serverless'
+  });
+
   // Helper: fetch latest status from DB (serverless-safe)
   const fetchDbStatus = async (): Promise<'running' | 'paused' | 'stopped' | 'completed' | null> => {
     if (!campaignId) return null;
@@ -337,37 +354,68 @@ async function sendEmailsAsync(
   };
 
   // Helper: wait with interruptible checks (pause/stop)
+  // For Vercel deployment: Use less frequent checks to avoid timeout
   const interruptibleSleep = async (ms: number): Promise<boolean> => {
     let remaining = ms;
-    const step = 2000; // 2s granularity for responsiveness
+    const step = DELAY_CHECK_INTERVAL; // Configurable check interval
+    let lastPauseCheck = Date.now();
+    
     while (remaining > 0) {
-      await sleep(Math.min(step, remaining));
-      remaining -= step;
+      const sleepTime = Math.min(step, remaining);
+      await sleep(sleepTime);
+      remaining -= sleepTime;
 
-      // Check DB-driven status during wait
-      const dbStatus = await syncStatusFromDb();
-      const statusNow = getCurrentCampaign();
+      // Only check DB status periodically to reduce database load
+      const now = Date.now();
+      if (now - lastPauseCheck >= PAUSE_CHECK_INTERVAL || remaining <= 0) {
+        lastPauseCheck = now;
+        
+        // Check DB-driven status during wait
+        const dbStatus = await syncStatusFromDb();
+        const statusNow = getCurrentCampaign();
 
-      if (!statusNow || statusNow.status === 'stopped' || statusNow.isRunning === false || dbStatus === 'stopped') {
-        return false; // interrupted due to stop
-      }
+        // Only interrupt if DB status is definitively stopped or completed
+        if (dbStatus === 'stopped' || dbStatus === 'completed') {
+          console.log(`⏹️ Campaign ${dbStatus} by database status`);
+          return false; // interrupted due to stop
+        }
 
-      // If paused, wait here until resumed or stopped
-      while (statusNow.status === 'paused' || dbStatus === 'paused') {
-        console.log('⏸️ Campaign paused during wait. Polling for resume...');
-        await sleep(2000);
-        await syncStatusFromDb();
-        const updated = getCurrentCampaign();
-        if (!updated || updated.status === 'stopped' || updated.isRunning === false) return false;
-        if (updated.status === 'running') break; // resume
+        // If paused, wait in longer intervals
+        if (statusNow?.status === 'paused' || dbStatus === 'paused') {
+          console.log('⏸️ Campaign paused. Checking resume status...');
+          
+          // Wait in configurable intervals while paused
+          while (true) {
+            await sleep(PAUSE_POLL_INTERVAL); // Configurable pause polling
+            const latestDb = await syncStatusFromDb();
+            const updated = getCurrentCampaign();
+
+            // Only stop if DB status is stopped or completed
+            if (latestDb === 'stopped' || latestDb === 'completed') {
+              console.log(`⏹️ Campaign ${latestDb} while paused`);
+              return false;
+            }
+
+            // Resume if status is running
+            if (updated?.status === 'running' || latestDb === 'running') {
+              console.log('▶️ Campaign resumed, continuing...');
+              break; // resume
+            }
+            
+            // Less noisy logging - only log every 30 seconds
+            const secondsPaused = Math.floor((Date.now() - lastPauseCheck) / 1000);
+            if (secondsPaused % 30 === 0) {
+              console.log(`⏸️ Still paused (${secondsPaused}s)`);
+            }
+          }
+        }
       }
     }
     return true; // completed wait without interruption
   };
 
-  try {
-    // Filter senders if specific ones are selected
-    const availableSenders = selectedSenders && selectedSenders.length > 0
+  // Filter senders if specific ones are selected
+  const availableSenders = selectedSenders && selectedSenders.length > 0
       ? senders.filter(sender => selectedSenders.includes(sender.email))
       : senders;
 
@@ -601,31 +649,39 @@ async function sendEmailsAsync(
       const dbStatus = await syncStatusFromDb();
       const currentStatus = getCurrentCampaign();
 
-      // Handle stop
-      if (!currentStatus || currentStatus.status === 'stopped' || currentStatus.isRunning === false || dbStatus === 'stopped') {
+      // Handle stop: Only stop if DB status is definitively stopped/completed
+      if (dbStatus === 'stopped' || dbStatus === 'completed') {
         console.log(`⏹️ Campaign stopped by user at ${i}/${recipients.length} emails`);
         break;
       }
 
-      // Handle pause: wait until resumed
-      while (currentStatus.status === 'paused' || dbStatus === 'paused') {
+      // Handle pause: wait until resumed or stopped
+      while (currentStatus?.status === 'paused' || dbStatus === 'paused') {
         console.log(`⏸️ Campaign paused at ${i}/${recipients.length} emails. Waiting...`);
         await sleep(2000);
+
         const latestDb = await syncStatusFromDb();
         const newStatus = getCurrentCampaign();
-        if (!newStatus || newStatus.status === 'stopped' || newStatus.isRunning === false || latestDb === 'stopped') {
+
+        // Only break if definitively stopped or completed
+        if (latestDb === 'stopped' || latestDb === 'completed') {
           console.log(`⏹️ Campaign stopped while paused at ${i}/${recipients.length} emails`);
           break;
         }
-        if (newStatus.status === 'running' || latestDb === 'running') {
+
+        // Resume if status is running
+        if (newStatus?.status === 'running' || latestDb === 'running') {
           console.log(`▶️ Campaign resumed at ${i}/${recipients.length} emails`);
           break;
         }
+
+        // If campaign instance is missing but DB says paused, keep waiting
+        // Don't break just because in-memory instance is lost
       }
 
-      // Double-check continuation after pause handling
-      const finalStatus = getCurrentCampaign();
-      if (finalStatus.status === 'stopped' || finalStatus.isRunning === false) {
+      // Final check: only continue if not stopped/completed
+      const checkDbStatus = await syncStatusFromDb();
+      if (checkDbStatus === 'stopped' || checkDbStatus === 'completed') {
         console.log(`⏹️ Campaign stopped after pause check at ${i}/${recipients.length} emails`);
         break;
       }
@@ -681,7 +737,9 @@ async function sendEmailsAsync(
           recipient: recipient.email,
           subject: subject,
           status: 'success',
-          sender: senderEmail
+          sender: senderEmail,
+          campaignName: campaignName,
+          campaignId: campaignId
         });
 
         // Persist email log to MongoDB if campaignId is present
@@ -734,7 +792,9 @@ async function sendEmailsAsync(
           subject: subject,
           status: 'failed',
           error: error.message || 'Unknown error',
-          sender: senderEmail
+          sender: senderEmail,
+          campaignName: campaignName,
+          campaignId: campaignId
         });
 
         // Persist failure to MongoDB
@@ -814,7 +874,7 @@ async function sendEmailsAsync(
 
         // Update campaign status with delay info for UI
         const delaySeconds = Math.round(delay / 1000);
-        updateCampaignStatus({
+        updateCampaignInstance(campaignId, {
           nextEmailIn: delaySeconds,
           lastDelay: delay
         });
@@ -829,7 +889,7 @@ async function sendEmailsAsync(
         }
 
         // Clear the countdown after delay
-        updateCampaignStatus({
+        updateCampaignInstance(campaignId, {
           nextEmailIn: null
         });
       }
@@ -837,7 +897,7 @@ async function sendEmailsAsync(
 
     // Campaign completion summary (matching HTML/JS project)
     const duration = Math.round((Date.now() - (getCampaignStatus().startTime || Date.now())) / 1000);
-    console.log(`\n✅ Campaign "${campaignName}" completed!`);
+    console.log(`\n📊 Campaign "${campaignName}" finished!`);
     console.log(`📊 Final Results:`);
     console.log(`   Total Emails: ${recipients.length}`);
     console.log(`   Successfully Sent: ${stats.successful}`);
@@ -845,28 +905,32 @@ async function sendEmailsAsync(
     console.log(`   Duration: ${duration}s`);
     console.log(`   Success Rate: ${((stats.successful / recipients.length) * 100).toFixed(1)}%`);
 
-    // Mark campaign as completed
-    completeCampaignInstance(campaignId);
+    // Check final status - only mark as completed if all emails were sent
+    const finalDbStatus = await syncStatusFromDb();
+    const wasFullyCompleted = stats.sent === recipients.length && (finalDbStatus !== 'stopped' && finalDbStatus !== 'paused');
 
-    // Persist final campaign status
-    if (campaignId) {
-      try {
-        await campaignRepository.updateCampaignProgress(campaignId, {
-          status: 'completed',
-          sentCount: stats.sent,
-          successCount: stats.successful,
-          failedCount: stats.failed,
-          endTime: new Date()
-        });
-      } catch (err) {
-        console.warn('Failed to persist final campaign status:', err);
+    if (wasFullyCompleted) {
+      console.log(`✅ Campaign fully completed!`);
+      // Mark campaign as completed
+      completeCampaignInstance(campaignId);
+
+      // Persist final campaign status
+      if (campaignId) {
+        try {
+          await campaignRepository.updateCampaignProgress(campaignId, {
+            status: 'completed',
+            sentCount: stats.sent,
+            successCount: stats.successful,
+            failedCount: stats.failed,
+            endTime: new Date()
+          });
+        } catch (err) {
+          console.warn('Failed to persist final campaign status:', err);
+        }
       }
+    } else {
+      // Campaign was stopped or paused - don't mark as completed
+      console.log(`ℹ️ Campaign ended with status: ${finalDbStatus || 'unknown'}`);
     }
-
-  } catch (error) {
-    console.error('Campaign execution error:', error);
-
-    // Mark campaign as completed even if there was an error
-    completeCampaign();
-  }
 }
+
