@@ -17,6 +17,7 @@ interface Campaign {
   endTime?: string;
   selectedSenders: string[];
   emailLogs?: EmailLogEntry[];
+  nextEmailIn?: number;
 }
 
 interface EmailLogEntry {
@@ -141,6 +142,153 @@ const CampaignsHistorySection = () => {
     return ((success / total) * 100).toFixed(1);
   };
 
+  // Campaign control handlers
+  const handlePauseCampaign = async (campaignId: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast.error('Authentication required. Please log in again.');
+        return;
+      }
+
+      const response = await fetch('/api/campaigns/pause', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ campaignId })
+      });
+
+      if (response.ok) {
+        toast.success('Campaign paused successfully');
+        fetchCampaigns(); // Refresh the list
+      } else if (response.status === 401) {
+        toast.error('Authentication failed. Please log in again.');
+      } else if (response.status === 404) {
+        toast.error('Campaign not found. It may have already completed.');
+        fetchCampaigns(); // Refresh to remove from list
+      } else {
+        const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+        toast.error(`Failed to pause campaign: ${error.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error pausing campaign:', error);
+      toast.error('Network error. Please check your connection and try again.');
+    }
+  };
+
+  const handleResumeCampaign = async (campaignId: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast.error('Authentication required. Please log in again.');
+        return;
+      }
+
+      const response = await fetch('/api/campaigns/resume', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ campaignId })
+      });
+
+      if (response.ok) {
+        toast.success('Campaign resumed successfully');
+        fetchCampaigns(); // Refresh the list
+      } else if (response.status === 401) {
+        toast.error('Authentication failed. Please log in again.');
+      } else if (response.status === 404) {
+        toast.error('Campaign not found. It may have already completed.');
+        fetchCampaigns(); // Refresh to remove from list
+      } else {
+        const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+        toast.error(`Failed to resume campaign: ${error.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error resuming campaign:', error);
+      toast.error('Network error. Please check your connection and try again.');
+    }
+  };
+
+  const handleStopCampaign = async (campaignId: string) => {
+    if (!confirm('Are you sure you want to stop this campaign? This action cannot be undone and will permanently stop the campaign.')) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast.error('Authentication required. Please log in again.');
+        return;
+      }
+
+      const response = await fetch('/api/campaigns/stop', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ campaignId })
+      });
+
+      if (response.ok) {
+        toast.success('Campaign stopped successfully');
+        fetchCampaigns(); // Refresh the list
+      } else if (response.status === 401) {
+        toast.error('Authentication failed. Please log in again.');
+      } else if (response.status === 404) {
+        toast.error('Campaign not found. It may have already completed.');
+        fetchCampaigns(); // Refresh to remove from list
+      } else {
+        const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+        toast.error(`Failed to stop campaign: ${error.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error stopping campaign:', error);
+      toast.error('Network error. Please check your connection and try again.');
+    }
+  };
+
+  // Timer component for next email countdown
+  const NextEmailTimer = ({ nextEmailIn }: { nextEmailIn?: number }) => {
+    const [timeLeft, setTimeLeft] = useState(nextEmailIn || 0);
+
+    useEffect(() => {
+      setTimeLeft(nextEmailIn || 0);
+    }, [nextEmailIn]);
+
+    useEffect(() => {
+      if (timeLeft <= 0) return;
+
+      const timer = setInterval(() => {
+        setTimeLeft(prev => {
+          if (prev <= 1) {
+            // Refresh campaigns when timer reaches 0
+            fetchCampaigns();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+      return () => clearInterval(timer);
+    }, [timeLeft]);
+
+    if (!nextEmailIn || timeLeft <= 0) return null;
+
+    const minutes = Math.floor(timeLeft / 60);
+    const seconds = timeLeft % 60;
+
+    return (
+      <div className="text-xs text-blue-600 font-medium">
+        Next email in: {minutes}:{seconds.toString().padStart(2, '0')}
+      </div>
+    );
+  };
+
   if (isLoading) {
     return (
       <div className="text-center py-12">
@@ -200,7 +348,7 @@ const CampaignsHistorySection = () => {
               </div>
               <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
                 <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 012 2z" />
                 </svg>
               </div>
             </div>
@@ -352,12 +500,50 @@ const CampaignsHistorySection = () => {
                       {new Date(campaign.startTime).toLocaleString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <button
-                        onClick={() => viewCampaignDetails(campaign)}
-                        className="text-blue-600 hover:text-blue-900"
-                      >
-                        View Details
-                      </button>
+                      <div className="flex flex-col gap-1">
+                        {/* Control buttons for running campaigns */}
+                        {(campaign.status === 'running' || campaign.status === 'paused') && (
+                          <div className="flex gap-1 mb-1">
+                            {campaign.status === 'running' ? (
+                              <button
+                                onClick={() => handlePauseCampaign(campaign._id)}
+                                className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded hover:bg-yellow-200"
+                                title="Pause campaign"
+                              >
+                                ⏸️ Pause
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleResumeCampaign(campaign._id)}
+                                className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded hover:bg-green-200"
+                                title="Resume campaign"
+                              >
+                                ▶️ Resume
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleStopCampaign(campaign._id)}
+                              className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200"
+                              title="Stop campaign"
+                            >
+                              ⏹️ Stop
+                            </button>
+                          </div>
+                        )}
+                        
+                        {/* Next email timer for running campaigns */}
+                        {campaign.status === 'running' && campaign.nextEmailIn && (
+                          <NextEmailTimer nextEmailIn={campaign.nextEmailIn} />
+                        )}
+                        
+                        {/* View Details button */}
+                        <button
+                          onClick={() => viewCampaignDetails(campaign)}
+                          className="text-blue-600 hover:text-blue-900 text-xs"
+                        >
+                          View Details
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

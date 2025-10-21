@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getEmailDetails } from '@/lib/campaignState';
+import { multiCampaignState } from '@/lib/multiCampaignManager';
 
 export default async function handler(
   req: NextApiRequest,
@@ -9,6 +10,48 @@ export default async function handler(
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const details = getEmailDetails();
-  res.status(200).json(details.slice(0, 50)); // Return last 50 details
+  try {
+    // Legacy single-list details
+    const legacyDetails = getEmailDetails();
+
+    // Collect all details from multi-campaign store (flatten map)
+    const multiDetails: any[] = [];
+    try {
+      const map = multiCampaignState.emailDetails;
+      if (map && map instanceof Map) {
+        for (const [campaignId, list] of map.entries()) {
+          if (Array.isArray(list)) {
+            // Ensure each entry has campaignId set (some legacy entries might not)
+            list.forEach((d: any) => {
+              if (d && !d.campaignId) d.campaignId = campaignId;
+              multiDetails.push(d);
+            });
+          }
+        }
+      }
+    } catch (err) {
+      // Non-fatal - if multiCampaignState is not available, continue with legacy
+      console.warn('Could not read multiCampaignState.emailDetails:', err);
+    }
+
+    // Merge and dedupe by timestamp+recipient (simple heuristic)
+    const combined = [...multiDetails, ...legacyDetails];
+    const seen = new Set();
+    const deduped: any[] = [];
+
+    for (const d of combined) {
+      const key = `${d.timestamp || ''}::${d.recipient || ''}::${d.sender || ''}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduped.push(d);
+      }
+    }
+
+    // Return most recent first and limit to 200 entries
+    deduped.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+    res.status(200).json(deduped.slice(0, 200));
+  } catch (error) {
+    console.error('Error fetching combined email details:', error);
+    res.status(500).json({ error: 'Failed to fetch email details' });
+  }
 }

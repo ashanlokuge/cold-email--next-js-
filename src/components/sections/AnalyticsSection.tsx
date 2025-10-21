@@ -23,6 +23,8 @@ interface EmailDetail {
   status: 'success' | 'failed';
   error?: string;
   sender: string;
+  campaignName?: string;
+  campaignId?: string;
 }
 
 interface CampaignHistory {
@@ -319,6 +321,22 @@ export default function AnalyticsSection() {
     setEmailDetails([]);
   };
 
+  // Helper to update local runningCampaigns status optimistically
+  const updateLocalCampaignStatus = (campaignId: string, status: string) => {
+    setRunningCampaigns(prev => prev.map((c: any) => c.campaignId === campaignId ? { ...c, status } : c));
+    // also update primary campaignStatus when applicable
+    setCampaignStatus(prev => {
+      try {
+        if ((prev as any).campaignId && (prev as any).campaignId === campaignId) {
+          return { ...(prev as any), status } as any;
+        }
+      } catch (e) {
+        // ignore
+      }
+      return prev;
+    });
+  };
+
   const resetCampaign = async () => {
     try {
       const response = await fetch('/api/campaigns/reset', { method: 'POST' });
@@ -355,6 +373,7 @@ export default function AnalyticsSection() {
       });
       if (response.ok) {
         addToActivityLog(`⏸️ Campaign ${campaignId ? `"${campaignId}"` : ''} paused by user`);
+        setRunningCampaigns(prev => prev.map((c: any) => c.campaignId === campaignId ? { ...c, status: 'paused' } : c));
       }
     } catch (error) {
       console.error('Error pausing campaign:', error);
@@ -373,6 +392,7 @@ export default function AnalyticsSection() {
       });
       if (response.ok) {
         addToActivityLog(`▶️ Campaign ${campaignId ? `"${campaignId}"` : ''} resumed by user`);
+        setRunningCampaigns(prev => prev.map((c: any) => c.campaignId === campaignId ? { ...c, status: 'running' } : c));
       }
     } catch (error) {
       console.error('Error resuming campaign:', error);
@@ -391,6 +411,7 @@ export default function AnalyticsSection() {
       });
       if (response.ok) {
         addToActivityLog(`⏹️ Campaign ${campaignId ? `"${campaignId}"` : ''} stopped by user`);
+        setRunningCampaigns(prev => prev.map((c: any) => c.campaignId === campaignId ? { ...c, status: 'stopped' } : c));
       }
     } catch (error) {
       console.error('Error stopping campaign:', error);
@@ -429,229 +450,8 @@ export default function AnalyticsSection() {
       </div>
 
       <div className="space-y-8">
-        {/* Current Campaign Status */}
-        <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-soft border border-gray-200/60 p-8">
-          <div className="flex items-center space-x-4 mb-8">
-            <div className="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl flex items-center justify-center shadow-blue">
-              {campaignStatus.isRunning ? (
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                </svg>
-              ) : (
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
-              )}
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold text-gray-800">Campaign Status</h2>
-              <p className="text-gray-600">Real-time campaign monitoring</p>
-            </div>
-          </div>
-
-          <div className="mb-8">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <span className="text-lg font-semibold text-gray-800">
-                  {campaignStatus.isRunning
-                    ? `"${campaignStatus.campaignName}": Sending ${campaignStatus.sent} of ${campaignStatus.total} emails...`
-                    : campaignStatus.completed
-                      ? `"${campaignStatus.campaignName}" completed: ${campaignStatus.sent}/${campaignStatus.total}`
-                      : 'No active campaign'
-                  }
-                </span>
-                {campaignStatus.isRunning && (
-                  <div className="flex flex-col space-y-1 mt-2">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-3 h-3 bg-success-500 rounded-full animate-pulse"></div>
-                      <span className="text-sm text-success-600 font-medium">Live Campaign</span>
-                    </div>
-                    {campaignStatus.nextEmailIn && campaignStatus.nextEmailIn > 0 && (
-                      <div className="flex items-center space-x-2">
-                        <svg className="w-3 h-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span className="text-sm text-blue-600 font-medium">
-                          Next email in {campaignStatus.nextEmailIn}s
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-              <div className="text-right">
-                <span className="text-3xl font-bold bg-gradient-to-r from-primary-600 to-accent-600 bg-clip-text text-transparent">
-                  {getProgressPercentage()}%
-                </span>
-                <div className="text-sm text-gray-500">Complete</div>
-                {(campaignStatus.isRunning || campaignStatus.completed) && (
-                  <button
-                    onClick={resetCampaign}
-                    className="mt-2 bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1 rounded-lg text-xs transition-all duration-300 font-medium border border-red-200"
-                  >
-                    Reset Campaign
-                  </button>
-                )}
-              </div>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-4 shadow-inner">
-              <div
-                className="bg-gradient-to-r from-primary-500 to-accent-500 h-4 rounded-full transition-all duration-500 shadow-sm"
-                style={{ width: `${getProgressPercentage()}%` }}
-              ></div>
-            </div>
-          </div>
-
-          {/* Modern Campaign Control Panel */}
-          {campaignStatus.isRunning && (
-            <div className="mb-8 bg-gradient-to-r from-gray-50 to-gray-100 rounded-2xl p-6 border border-gray-200/60">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className="flex items-center space-x-2">
-                    <div className={`w-4 h-4 rounded-full ${campaignStatus.status === 'running' ? 'bg-green-500 animate-pulse' :
-                        campaignStatus.status === 'paused' ? 'bg-yellow-500' :
-                          'bg-red-500'
-                      }`}></div>
-                    <span className="text-lg font-semibold text-gray-700">
-                      Campaign Control
-                    </span>
-                  </div>
-                  <div className="text-sm text-gray-500">
-                    Status: <span className="font-medium text-gray-700 capitalize">{campaignStatus.status || 'running'}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-3">
-                  {campaignStatus.status === 'running' ? (
-                    <button
-                      onClick={pauseCampaign}
-                      className="group relative flex items-center space-x-2 bg-white hover:bg-yellow-50 text-yellow-700 px-6 py-3 rounded-xl font-medium transition-all duration-300 border border-yellow-200 hover:border-yellow-300 shadow-sm hover:shadow-md transform hover:scale-105"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6" />
-                      </svg>
-                      <span>Pause Campaign</span>
-                      <div className="absolute inset-0 bg-yellow-100 rounded-xl opacity-0 group-hover:opacity-20 transition-opacity duration-300"></div>
-                    </button>
-                  ) : campaignStatus.status === 'paused' ? (
-                    <button
-                      onClick={resumeCampaign}
-                      className="group relative flex items-center space-x-2 bg-white hover:bg-green-50 text-green-700 px-6 py-3 rounded-xl font-medium transition-all duration-300 border border-green-200 hover:border-green-300 shadow-sm hover:shadow-md transform hover:scale-105"
-                    >
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M8 5v14l11-7z" />
-                      </svg>
-                      <span>Resume Campaign</span>
-                      <div className="absolute inset-0 bg-green-100 rounded-xl opacity-0 group-hover:opacity-20 transition-opacity duration-300"></div>
-                    </button>
-                  ) : null}
-
-                  <button
-                    onClick={stopCampaign}
-                    className="group relative flex items-center space-x-2 bg-white hover:bg-red-50 text-red-700 px-6 py-3 rounded-xl font-medium transition-all duration-300 border border-red-200 hover:border-red-300 shadow-sm hover:shadow-md transform hover:scale-105"
-                  >
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M6 6h12v12H6z" />
-                    </svg>
-                    <span>Stop Campaign</span>
-                    <div className="absolute inset-0 bg-red-100 rounded-xl opacity-0 group-hover:opacity-20 transition-opacity duration-300"></div>
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-            <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-2xl font-semibold text-gray-900">{campaignStatus.sent}</div>
-                  <div className="text-sm text-gray-600">Sent</div>
-                </div>
-                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                  </svg>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-2xl font-semibold text-gray-900">{campaignStatus.successful}</div>
-                  <div className="text-sm text-gray-600">Successful</div>
-                </div>
-                <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                  <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-2xl font-semibold text-gray-900">{campaignStatus.failed}</div>
-                  <div className="text-sm text-gray-600">Failed</div>
-                </div>
-                <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
-                  <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-2xl font-semibold text-gray-900">{campaignStatus.total}</div>
-                  <div className="text-sm text-gray-600">Total</div>
-                </div>
-                <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
-                  <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                  </svg>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {campaignStatus.startTime && (
-            <div className="bg-gradient-to-r from-gray-50 to-gray-100 border border-gray-200/60 rounded-2xl p-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
-                <div>
-                  <div className="text-lg font-bold text-gray-700 mb-1">Duration: {formatDuration()}</div>
-                  <div className="text-sm text-gray-600">Duration</div>
-                </div>
-                <div>
-                  <div className="text-lg font-bold text-gray-700 mb-1">Success Rate: {getSuccessRate()}%</div>
-                  <div className="text-sm text-gray-600">Success Rate</div>
-                </div>
-                <div>
-                  <div className="flex items-center justify-center space-x-2 mb-2">
-                    <div className={`w-3 h-3 rounded-full ${campaignStatus.status === 'running' ? 'bg-green-500 animate-pulse' :
-                        campaignStatus.status === 'paused' ? 'bg-yellow-500' :
-                          campaignStatus.status === 'stopped' ? 'bg-red-500' :
-                            campaignStatus.status === 'completed' ? 'bg-blue-500' :
-                              'bg-gray-400'
-                      }`}></div>
-                    <span className="text-lg font-bold text-gray-700">
-                      {campaignStatus.status === 'running' ? 'Running' :
-                        campaignStatus.status === 'paused' ? 'Paused' :
-                          campaignStatus.status === 'stopped' ? 'Stopped' :
-                            campaignStatus.status === 'completed' ? 'Completed' :
-                              'Idle'}
-                    </span>
-                  </div>
-                  <div className="text-sm text-gray-600">Campaign Status</div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Multiple Running Campaigns */}
-        {runningCampaigns.length > 0 && (
+        {/* Running Campaigns - Shows all campaigns with independent data */}
+        {runningCampaigns.length > 0 ? (
           <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-soft border border-gray-200/60 p-8">
             <div className="flex items-center space-x-4 mb-8">
               <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-2xl flex items-center justify-center shadow-green">
@@ -661,84 +461,177 @@ export default function AnalyticsSection() {
               </div>
               <div>
                 <h2 className="text-2xl font-bold text-gray-800">Running Campaigns ({runningCampaigns.length})</h2>
-                <p className="text-gray-600">Multiple campaigns running simultaneously</p>
+                <p className="text-gray-600">Monitor active email campaigns with real-time progress</p>
               </div>
             </div>
 
             <div className="grid gap-6">
-              {runningCampaigns.map((campaign, index) => (
-                <div key={campaign.campaignId} className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-2xl p-6 border border-gray-200/60">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center space-x-4">
-                      <div className={`w-3 h-3 rounded-full ${campaign.status === 'running' ? 'bg-green-500 animate-pulse' :
-                          campaign.status === 'paused' ? 'bg-yellow-500' :
-                            'bg-red-500'
-                        }`}></div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-800">{campaign.campaignName}</h3>
-                        <p className="text-sm text-gray-600">Status: {campaign.status}</p>
+              {runningCampaigns.map((campaign, index) => {
+                // Filter emails for this specific campaign. Some legacy details may not have campaignId;
+                // fall back to matching campaignName if available.
+                const campaignEmails = emailDetails.filter(detail => {
+                  if (detail.campaignId) return detail.campaignId === campaign.campaignId;
+                  if (detail.campaignName) return detail.campaignName === campaign.campaignName;
+                  return false;
+                });
+                
+                // Debug logging
+                console.log(`🎯 Campaign: ${campaign.campaignName}`, {
+                  nextEmailIn: campaign.nextEmailIn,
+                  emailsCount: campaignEmails.length,
+                  status: campaign.status
+                });
+                
+                return (
+                  <div key={campaign.campaignId} className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-2xl p-6 border border-gray-200/60">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center space-x-4">
+                        <div className={`w-3 h-3 rounded-full ${campaign.status === 'running' ? 'bg-green-500 animate-pulse' :
+                            campaign.status === 'paused' ? 'bg-yellow-500' :
+                              'bg-red-500'
+                          }`}></div>
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-800">{campaign.campaignName}</h3>
+                          <div className="flex items-center space-x-3 mt-1">
+                            <p className="text-sm text-gray-600">
+                              Status: <span className="font-medium capitalize">{campaign.status}</span>
+                            </p>
+                            {campaign.nextEmailIn && campaign.nextEmailIn > 0 ? (
+                              <div className="flex items-center space-x-1 bg-blue-50 px-2 py-1 rounded-lg border border-blue-200">
+                                <svg className="w-3 h-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span className="text-xs text-blue-700 font-semibold">
+                                  Next: {campaign.nextEmailIn}s
+                                </span>
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-2xl font-bold text-green-600">
+                          {Math.round((campaign.sent / campaign.total) * 100)}%
+                        </span>
+                        <div className="text-sm text-gray-500">
+                          {campaign.sent}/{campaign.total} emails
+                        </div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <span className="text-2xl font-bold text-green-600">
-                        {Math.round((campaign.sent / campaign.total) * 100)}%
-                      </span>
-                      <div className="text-sm text-gray-500">
-                        {campaign.sent}/{campaign.total} emails
+
+                    <div className="w-full bg-gray-200 rounded-full h-3 mb-4">
+                      <div
+                        className="bg-gradient-to-r from-green-500 to-green-600 h-3 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.round((campaign.sent / campaign.total) * 100)}%` }}
+                      ></div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-4 text-center mb-4">
+                      <div className="bg-white rounded-lg p-3 border border-gray-200">
+                        <div className="text-lg font-bold text-green-600">{campaign.successful}</div>
+                        <div className="text-xs text-gray-600">Successful</div>
+                      </div>
+                      <div className="bg-white rounded-lg p-3 border border-gray-200">
+                        <div className="text-lg font-bold text-red-600">{campaign.failed}</div>
+                        <div className="text-xs text-gray-600">Failed</div>
+                      </div>
+                      <div className="bg-white rounded-lg p-3 border border-gray-200">
+                        <div className="text-lg font-bold text-blue-600">
+                          {Math.round((campaign.successful / campaign.sent) * 100) || 0}%
+                        </div>
+                        <div className="text-xs text-gray-600">Success Rate</div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="w-full bg-gray-200 rounded-full h-3 mb-4">
-                    <div
-                      className="bg-gradient-to-r from-green-500 to-green-600 h-3 rounded-full transition-all duration-500"
-                      style={{ width: `${Math.round((campaign.sent / campaign.total) * 100)}%` }}
-                    ></div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-4 text-center">
-                    <div className="bg-white rounded-lg p-3 border border-gray-200">
-                      <div className="text-lg font-bold text-green-600">{campaign.successful}</div>
-                      <div className="text-xs text-gray-600">Successful</div>
-                    </div>
-                    <div className="bg-white rounded-lg p-3 border border-gray-200">
-                      <div className="text-lg font-bold text-red-600">{campaign.failed}</div>
-                      <div className="text-xs text-gray-600">Failed</div>
-                    </div>
-                    <div className="bg-white rounded-lg p-3 border border-gray-200">
-                      <div className="text-lg font-bold text-blue-600">
-                        {Math.round((campaign.successful / campaign.sent) * 100) || 0}%
+                    {/* Recent Emails for this Campaign */}
+                    {campaignEmails.length > 0 && (
+                      <div className="mb-4 bg-white rounded-xl p-4 border border-gray-200">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
+                          <svg className="w-4 h-4 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                          </svg>
+                          Recent Emails (Last {Math.min(campaignEmails.length, 5)})
+                        </h4>
+                        <div className="space-y-1 max-h-40 overflow-y-auto">
+                          {campaignEmails.slice(0, 5).map((detail, idx) => {
+                            const isSuccess = detail.status === 'success';
+                            return (
+                              <div key={idx} className="flex items-center space-x-2 text-xs bg-gray-50 rounded p-2 border border-gray-100">
+                                <span className={`${isSuccess ? 'text-green-500' : 'text-red-500'} text-sm`}>
+                                  {isSuccess ? '✅' : '❌'}
+                                </span>
+                                <span className="text-gray-700 font-medium flex-1 truncate">{detail.recipient}</span>
+                                <span className="text-gray-400 text-xs">→</span>
+                                <span className="text-blue-600 font-mono text-xs truncate max-w-[150px]" title={detail.sender}>
+                                  {detail.sender}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                      <div className="text-xs text-gray-600">Success Rate</div>
+                    )}
+
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={async () => {
+                          // Optimistically update UI and call API
+                          updateLocalCampaignStatus(campaign.campaignId, 'paused');
+                          try {
+                            await pauseCampaign(campaign.campaignId);
+                          } catch (err) {
+                            // Revert on error
+                            updateLocalCampaignStatus(campaign.campaignId, campaign.status);
+                          }
+                        }}
+                        disabled={campaign.status !== 'running'}
+                        className="flex-1 bg-yellow-100 hover:bg-yellow-200 disabled:bg-gray-100 disabled:text-gray-400 text-yellow-700 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 border border-yellow-200"
+                      >
+                        ⏸️ Pause
+                      </button>
+                      <button
+                        onClick={async () => {
+                          updateLocalCampaignStatus(campaign.campaignId, 'running');
+                          try {
+                            await resumeCampaign(campaign.campaignId);
+                          } catch (err) {
+                            updateLocalCampaignStatus(campaign.campaignId, campaign.status);
+                          }
+                        }}
+                        disabled={campaign.status !== 'paused'}
+                        className="flex-1 bg-green-100 hover:bg-green-200 disabled:bg-gray-100 disabled:text-gray-400 text-green-700 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 border border-green-200"
+                      >
+                        ▶️ Resume
+                      </button>
+                      <button
+                        onClick={async () => {
+                          updateLocalCampaignStatus(campaign.campaignId, 'stopped');
+                          try {
+                            await stopCampaign(campaign.campaignId);
+                          } catch (err) {
+                            updateLocalCampaignStatus(campaign.campaignId, campaign.status);
+                          }
+                        }}
+                        disabled={campaign.status === 'stopped'}
+                        className="flex-1 bg-red-100 hover:bg-red-200 disabled:bg-gray-100 disabled:text-gray-400 text-red-700 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 border border-red-200"
+                      >
+                        ⏹️ Stop
+                      </button>
                     </div>
                   </div>
-
-                  <div className="mt-4 flex space-x-2">
-                    <button
-                      onClick={() => pauseCampaign(campaign.campaignId)}
-                      disabled={campaign.status !== 'running'}
-                      className="flex-1 bg-yellow-100 hover:bg-yellow-200 disabled:bg-gray-100 disabled:text-gray-400 text-yellow-700 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 border border-yellow-200"
-                    >
-                      ⏸️ Pause
-                    </button>
-                    <button
-                      onClick={() => resumeCampaign(campaign.campaignId)}
-                      disabled={campaign.status !== 'paused'}
-                      className="flex-1 bg-green-100 hover:bg-green-200 disabled:bg-gray-100 disabled:text-gray-400 text-green-700 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 border border-green-200"
-                    >
-                      ▶️ Resume
-                    </button>
-                    <button
-                      onClick={() => stopCampaign(campaign.campaignId)}
-                      disabled={campaign.status === 'stopped'}
-                      className="flex-1 bg-red-100 hover:bg-red-200 disabled:bg-gray-100 disabled:text-gray-400 text-red-700 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 border border-red-200"
-                    >
-                      ⏹️ Stop
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
+          </div>
+        ) : (
+          <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-soft border border-gray-200/60 p-16 text-center">
+            <div className="w-20 h-20 bg-gray-100 rounded-3xl flex items-center justify-center mx-auto mb-6">
+              <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <h3 className="text-2xl font-bold text-gray-800 mb-3">No Active Campaigns</h3>
+            <p className="text-gray-600 mb-6">Start a new campaign from the Compose section to see real-time progress here.</p>
           </div>
         )}
 
