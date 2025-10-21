@@ -27,9 +27,9 @@ export default async function handler(
     }
 
     // Get all campaigns for the users
-    const allCampaigns = getAllCampaignsForUser(userId);
-    const runningCampaigns = getRunningCampaignsForUser(userId);
-    const stats = getCampaignStatistics(userId);
+    const allCampaigns = await getAllCampaignsForUser(userId);
+    const runningCampaigns = await getRunningCampaignsForUser(userId);
+    const stats = await getCampaignStatistics(userId);
 
     // Return the primary running campaign (first one) for backward compatibility
     const primaryCampaign = runningCampaigns.length > 0 ? runningCampaigns[0] : null;

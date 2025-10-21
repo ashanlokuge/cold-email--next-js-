@@ -10,6 +10,15 @@
     },
     "src/pages/api/campaigns/schedule-chunks.ts": {
       "maxDuration": 60
+    },
+    "src/pages/api/campaigns/process-queue.ts": {
+      "maxDuration": 60
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/campaigns/process-queue",
+      "schedule": "*/1 * * * *"
+    }
+  ]
 }

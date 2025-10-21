@@ -158,8 +158,8 @@ export default async function handler(
     }
 
     // Check if user can start a new campaign (limit concurrent campaigns)
-    if (!canStartNewCampaign(userId, 5)) { // Max 5 concurrent campaigns per user
-      const runningCampaigns = getRunningCampaignsForUser(userId);
+    if (!(await canStartNewCampaign(userId, 5))) { // Max 5 concurrent campaigns per user
+      const runningCampaigns = await getRunningCampaignsForUser(userId);
       return res.status(409).json({
         error: `Maximum concurrent campaigns reached (${runningCampaigns.length}/5). Please wait for a campaign to complete or stop one.`,
         runningCampaigns: runningCampaigns.map(c => ({
@@ -329,21 +329,21 @@ async function sendEmailsAsync(
   };
 
   // Get campaign instance
-  const getCurrentCampaign = () => getCampaignInstance(campaignId) || null;
+  const getCurrentCampaign = async () => await getCampaignInstance(campaignId) || null;
 
   // Helper: sync in-memory status with DB if they diverge
   const syncStatusFromDb = async (): Promise<'running' | 'paused' | 'stopped' | 'completed' | null> => {
     const dbStatus = await fetchDbStatus();
     if (!dbStatus || !campaignId) return null;
 
-    const local = getCurrentCampaign();
+    const local = await getCurrentCampaign();
     if (local && dbStatus !== local.status) {
       if (dbStatus === 'paused') {
-        updateCampaignInstance(campaignId, { status: 'paused', isRunning: false });
+        await updateCampaignInstance(campaignId, { status: 'paused', isRunning: false });
       } else if (dbStatus === 'running') {
-        updateCampaignInstance(campaignId, { status: 'running', isRunning: true });
+        await updateCampaignInstance(campaignId, { status: 'running', isRunning: true });
       } else if (dbStatus === 'stopped' || dbStatus === 'completed') {
-        updateCampaignInstance(campaignId, {
+        await updateCampaignInstance(campaignId, {
           status: dbStatus,
           isRunning: false,
           completed: dbStatus === 'completed'
@@ -372,7 +372,7 @@ async function sendEmailsAsync(
         
         // Check DB-driven status during wait
         const dbStatus = await syncStatusFromDb();
-        const statusNow = getCurrentCampaign();
+        const statusNow = await getCurrentCampaign();
 
         // Only interrupt if DB status is definitively stopped or completed
         if (dbStatus === 'stopped' || dbStatus === 'completed') {
@@ -388,7 +388,7 @@ async function sendEmailsAsync(
           while (true) {
             await sleep(PAUSE_POLL_INTERVAL); // Configurable pause polling
             const latestDb = await syncStatusFromDb();
-            const updated = getCurrentCampaign();
+            const updated = await getCurrentCampaign();
 
             // Only stop if DB status is stopped or completed
             if (latestDb === 'stopped' || latestDb === 'completed') {
@@ -647,7 +647,7 @@ async function sendEmailsAsync(
     for (let i = 0; i < recipients.length; i++) {
       // Serverless-safe: sync status from DB before each email
       const dbStatus = await syncStatusFromDb();
-      const currentStatus = getCurrentCampaign();
+      const currentStatus = await getCurrentCampaign();
 
       // Handle stop: Only stop if DB status is definitively stopped/completed
       if (dbStatus === 'stopped' || dbStatus === 'completed') {
@@ -661,7 +661,7 @@ async function sendEmailsAsync(
         await sleep(2000);
 
         const latestDb = await syncStatusFromDb();
-        const newStatus = getCurrentCampaign();
+        const newStatus = await getCurrentCampaign();
 
         // Only break if definitively stopped or completed
         if (latestDb === 'stopped' || latestDb === 'completed') {
@@ -732,7 +732,7 @@ async function sendEmailsAsync(
         senderStats[senderEmail].successful++;
 
         // Add email detail for real-time tracking
-        addEmailDetailToCampaign(campaignId, {
+        await addEmailDetailToCampaign(campaignId, {
           timestamp: new Date().toISOString(),
           recipient: recipient.email,
           subject: subject,
@@ -761,7 +761,7 @@ async function sendEmailsAsync(
         console.log(`OK ${recipient.email} via ${senderEmail} (${senderDisplayName}) — status: 202 (${stats.sent}/${recipients.length})`);
 
         // Update campaign status in real-time
-        updateCampaignInstance(campaignId, {
+        await updateCampaignInstance(campaignId, {
           sent: stats.sent,
           successful: stats.successful,
           failed: stats.failed
@@ -786,7 +786,7 @@ async function sendEmailsAsync(
         senderStats[senderEmail].failed++;
 
         // Add failed email detail
-        addEmailDetailToCampaign(campaignId, {
+        await addEmailDetailToCampaign(campaignId, {
           timestamp: new Date().toISOString(),
           recipient: recipient.email,
           subject: subject,
@@ -817,7 +817,7 @@ async function sendEmailsAsync(
         console.log(`❌ FAILED ${recipient.email} via ${senderEmail} (${senderDisplayName}) — error: ${error.message} (${stats.sent}/${recipients.length})`);
 
         // Update campaign status
-        updateCampaignInstance(campaignId, {
+        await updateCampaignInstance(campaignId, {
           sent: stats.sent,
           successful: stats.successful,
           failed: stats.failed
@@ -869,12 +869,19 @@ async function sendEmailsAsync(
           }
         }
 
-        const campaignStartTime = getCampaignStatus().startTime || Date.now();
+        // Prefer the campaign instance startTime when available (avoid deprecated getCampaignStatus)
+        let campaignStartTime = Date.now();
+        try {
+          const instance = await getCampaignInstance(campaignId);
+          if (instance && instance.startTime) campaignStartTime = instance.startTime as number;
+        } catch (err) {
+          // fallback to now
+        }
         const delay = calculateHumanLikeDelay(i, stats.sent, recipients.length, senderEmail, campaignStartTime, timezoneConfig);
 
         // Update campaign status with delay info for UI
         const delaySeconds = Math.round(delay / 1000);
-        updateCampaignInstance(campaignId, {
+        await updateCampaignInstance(campaignId, {
           nextEmailIn: delaySeconds,
           lastDelay: delay
         });
@@ -889,14 +896,22 @@ async function sendEmailsAsync(
         }
 
         // Clear the countdown after delay
-        updateCampaignInstance(campaignId, {
+        await updateCampaignInstance(campaignId, {
           nextEmailIn: null
         });
       }
     }
 
     // Campaign completion summary (matching HTML/JS project)
-    const duration = Math.round((Date.now() - (getCampaignStatus().startTime || Date.now())) / 1000);
+    // Compute duration from campaign instance startTime if available
+    let durationStart = Date.now();
+    try {
+      const instance = await getCampaignInstance(campaignId);
+      if (instance && instance.startTime) durationStart = instance.startTime as number;
+    } catch (err) {
+      // ignore
+    }
+    const duration = Math.round((Date.now() - durationStart) / 1000);
     console.log(`\n📊 Campaign "${campaignName}" finished!`);
     console.log(`📊 Final Results:`);
     console.log(`   Total Emails: ${recipients.length}`);
@@ -912,7 +927,7 @@ async function sendEmailsAsync(
     if (wasFullyCompleted) {
       console.log(`✅ Campaign fully completed!`);
       // Mark campaign as completed
-      completeCampaignInstance(campaignId);
+      await completeCampaignInstance(campaignId);
 
       // Persist final campaign status
       if (campaignId) {

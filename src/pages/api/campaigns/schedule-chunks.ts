@@ -1,6 +1,31 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { campaignRepository } from '@/lib/campaignRepository';
 import type { Recipient, TimezoneConfig } from '@/types';
+import { connectDB } from '@/lib/db';
+
+const JOB_QUEUE_COLLECTION = 'jobQueue';
+
+interface Job {
+  campaignId: string;
+  jobType: 'process-chunk';
+  scheduledTime: Date;
+  payload: {
+    chunkIndex: number;
+    totalChunks: number;
+    recipients: Recipient[];
+    subject: string;
+    text: string;
+    senders: any[];
+    selectedSenders: any[];
+    timezoneConfig: TimezoneConfig;
+    startIndex: number;
+  };
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  createdAt: Date;
+  updatedAt: Date;
+  retryCount: number;
+  maxRetries: number;
+}
 
 export default async function handler(
   req: NextApiRequest,
@@ -56,56 +81,47 @@ export default async function handler(
       }
     }
 
-    // Schedule chunks with delays
+    // Schedule chunks by storing jobs in database queue
+    const db = await connectDB();
     const scheduledChunks = [];
 
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
       // Per-chunk offset (1 minute between chunks) plus initialDelay
       const delay = initialDelay + i * 60000; // 1 minute delay between chunks
+      const scheduledTime = new Date(Date.now() + delay);
+
+      const job: Job = {
+        campaignId,
+        jobType: 'process-chunk',
+        scheduledTime,
+        payload: {
+          chunkIndex: chunk.chunkIndex,
+          totalChunks: chunks.length,
+          recipients: chunk.recipients,
+          subject,
+          text,
+          senders,
+          selectedSenders,
+          timezoneConfig,
+          startIndex: chunk.startIndex
+        },
+        status: 'pending',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        retryCount: 0,
+        maxRetries: 3
+      };
+
+      await db.collection(JOB_QUEUE_COLLECTION).insertOne(job);
 
       scheduledChunks.push({
         chunkIndex: chunk.chunkIndex,
         startIndex: chunk.startIndex,
         recipients: chunk.recipients,
         delay: delay,
-        scheduledTime: new Date(Date.now() + delay)
+        scheduledTime
       });
-
-      // Schedule the chunk processing
-      setTimeout(async () => {
-        try {
-          console.log(`⏰ Executing scheduled chunk ${chunk.chunkIndex + 1}/${chunks.length}`);
-
-          const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/campaigns/process-chunk`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              campaignId,
-              chunkIndex: chunk.chunkIndex,
-              totalChunks: chunks.length,
-              recipients: chunk.recipients,
-              subject,
-              text,
-              senders,
-              selectedSenders,
-              timezoneConfig,
-              startIndex: chunk.startIndex
-            })
-          });
-
-          if (!response.ok) {
-            console.error(`❌ Chunk ${chunk.chunkIndex + 1} failed:`, await response.text());
-          } else {
-            const result = await response.json();
-            console.log(`✅ Chunk ${chunk.chunkIndex + 1} completed:`, result);
-          }
-        } catch (error) {
-          console.error(`❌ Error executing chunk ${chunk.chunkIndex + 1}:`, error);
-        }
-      }, delay);
     }
 
     // Update campaign status

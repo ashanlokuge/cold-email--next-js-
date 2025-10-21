@@ -478,23 +478,39 @@ const CampaignsHistorySection = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        {campaign.sentCount} / {campaign.totalRecipients}
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
-                        <div
-                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                          style={{ width: `${(campaign.sentCount / campaign.totalRecipients) * 100}%` }}
-                        ></div>
-                      </div>
+                      {(() => {
+                        const sent = Number.isFinite(Number(campaign.sentCount)) ? Number(campaign.sentCount) : 0;
+                        const total = Number.isFinite(Number(campaign.totalRecipients)) ? Number(campaign.totalRecipients) : 0;
+                        const pct = total > 0 ? Math.min(100, Math.max(0, (sent / total) * 100)) : 0;
+
+                        return (
+                          <>
+                            <div className="text-sm text-gray-900">
+                              {sent} / {total}
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
+                              <div
+                                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                                style={{ width: `${pct}%` }}
+                              ></div>
+                            </div>
+                          </>
+                        );
+                      })()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        {calculateSuccessRate(campaign.successCount, campaign.sentCount)}%
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {campaign.successCount} / {campaign.sentCount} sent
-                      </div>
+                      {(() => {
+                        const success = Number.isFinite(Number(campaign.successCount)) ? Number(campaign.successCount) : 0;
+                        const sentSoFar = Number.isFinite(Number(campaign.sentCount)) ? Number(campaign.sentCount) : 0;
+                        const rate = sentSoFar > 0 ? ((success / sentSoFar) * 100).toFixed(1) : '0.0';
+
+                        return (
+                          <>
+                            <div className="text-sm text-gray-900">{rate}%</div>
+                            <div className="text-xs text-gray-500">{success} / {sentSoFar} sent</div>
+                          </>
+                        );
+                      })()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {new Date(campaign.startTime).toLocaleString()}

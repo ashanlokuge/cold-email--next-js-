@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getEmailDetails } from '@/lib/campaignState';
-import { multiCampaignState } from '@/lib/multiCampaignManager';
+import { getAllEmailDetails } from '@/lib/multiCampaignManager';
 
 export default async function handler(
   req: NextApiRequest,
@@ -14,28 +14,11 @@ export default async function handler(
     // Legacy single-list details
     const legacyDetails = getEmailDetails();
 
-    // Collect all details from multi-campaign store (flatten map)
-    const multiDetails: any[] = [];
-    try {
-      const map = multiCampaignState.emailDetails;
-      if (map && map instanceof Map) {
-        for (const [campaignId, list] of map.entries()) {
-          if (Array.isArray(list)) {
-            // Ensure each entry has campaignId set (some legacy entries might not)
-            list.forEach((d: any) => {
-              if (d && !d.campaignId) d.campaignId = campaignId;
-              multiDetails.push(d);
-            });
-          }
-        }
-      }
-    } catch (err) {
-      // Non-fatal - if multiCampaignState is not available, continue with legacy
-      console.warn('Could not read multiCampaignState.emailDetails:', err);
-    }
+    // Get all details from MongoDB
+    const mongoDetails = await getAllEmailDetails(200);
 
     // Merge and dedupe by timestamp+recipient (simple heuristic)
-    const combined = [...multiDetails, ...legacyDetails];
+    const combined = [...mongoDetails, ...legacyDetails];
     const seen = new Set();
     const deduped: any[] = [];
 

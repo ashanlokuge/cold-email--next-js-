@@ -54,35 +54,7 @@ export async function createCampaignInstance(
     updatedAt: now
   };
 
-  // Avoid creating duplicate DB documents. The repository creates a document with
-  // an ObjectId _id (returned as string). If that exists, update it instead.
-  try {
-    const filter: any = { $or: [{ campaignId }] };
-
-    // If campaignId looks like an ObjectId hex, include _id match as well
-    if (/^[0-9a-fA-F]{24}$/.test(campaignId)) {
-      try {
-        const { ObjectId } = await import('mongodb');
-        filter.$or.push({ _id: new ObjectId(campaignId) });
-      } catch (err) {
-        // ignore if ObjectId not available
-      }
-    }
-
-    await db.collection(CAMPAIGNS_COLLECTION).updateOne(
-      filter,
-      { $set: { ...campaign } },
-      { upsert: true }
-    );
-  } catch (err) {
-    // Fallback to insert if upsert fails for any reason
-    try {
-      await db.collection(CAMPAIGNS_COLLECTION).insertOne(campaign);
-    } catch (e) {
-      console.warn('Failed to persist campaign instance to DB:', e);
-    }
-  }
-
+  await db.collection(CAMPAIGNS_COLLECTION).insertOne(campaign);
   return campaign;
 }
 
@@ -148,17 +120,6 @@ export async function getEmailDetailsForCampaign(campaignId: string): Promise<Em
   const details = await db.collection(EMAIL_DETAILS_COLLECTION)
     .find({ campaignId })
     .sort({ timestamp: 1 })
-    .toArray();
-  return details as unknown as EmailDetail[];
-}
-
-// Get all email details (for all campaigns)
-export async function getAllEmailDetails(limit: number = 200): Promise<EmailDetail[]> {
-  const db = await connectDB();
-  const details = await db.collection(EMAIL_DETAILS_COLLECTION)
-    .find({})
-    .sort({ timestamp: -1 })
-    .limit(limit)
     .toArray();
   return details as unknown as EmailDetail[];
 }
