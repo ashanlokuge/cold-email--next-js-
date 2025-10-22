@@ -4,12 +4,6 @@
   "functions": {
     "src/pages/api/campaigns/send.ts": {
       "maxDuration": 60
-    },
-    "src/pages/api/campaigns/process-chunk.ts": {
-      "maxDuration": 60
-    },
-    "src/pages/api/campaigns/schedule-chunks.ts": {
-      "maxDuration": 60
     }
   }
 }

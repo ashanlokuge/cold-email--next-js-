@@ -95,104 +95,24 @@ Time: 9:00 to 17:00
 - ⏸️ **5 PM - 9 AM Mon-Fri (Sydney time):** Campaign paused
 - ⏸️ **All day Saturday & Sunday:** Campaign paused
 - 🔄 **Every 5 minutes:** Check if schedule opened, auto-resume if yes
+# Pause/Resume feature removed
 
-## Technical Flow
+This project no longer supports a user-driven Pause/Resume flow. The Pause/Resume feature was removed to simplify runtime behaviour and make the system safer for serverless deployments (Vercel). The app now provides a single campaign control: Stop.
 
-1. **Before sending each email:**
-   ```
-   Check: Is today allowed? → isSendingAllowedToday()
-   Check: Is current hour in window? → isWithinSendingWindow()
-   ```
+What changed
+- The Pause and Resume API endpoints were removed (they now return 410 Gone).
+- The UI no longer shows Pause or Resume buttons; only Stop is available.
+- Internal campaign state no longer stores a `paused` status. Campaigns use these statuses: `running`, `stopped`, `completed`.
+- `src/pages/api/campaigns/send.ts` no longer relies on a persisted `paused` state. It only checks for `stopped` or `completed` in the database to interrupt execution.
 
-2. **If BOTH checks pass:**
-   ```
-   ✅ Proceed to send email
-   ```
+Why
+- Pause/Resume required long-lived loops and frequent polling which are fragile in serverless environments and added a lot of complexity. Removing it simplifies the runtime and reduces DB/write churn.
 
-3. **If EITHER check fails:**
-   ```
-   ⏸️ Enter pause loop:
-      - Log pause reason
-      - Wait 5 minutes
-      - Re-check schedule
+How to stop a campaign
+- Use the Stop button in the Campaigns History or Analytics views. Stopping marks the campaign as `stopped` and sending will halt.
+
+DB normalization note
+- Existing campaigns persisted with status `paused` will continue to exist in the database. We recommend running a one-off migration to map `paused` → `stopped` if you want canonical statuses; I can create that migration script for you.
+
+If you want the pause/resume flow restored later we can reintroduce a lighter-weight mechanism that avoids long-lived loops (for example: external scheduler + status flags), but for now Stop-only keeps things simple and reliable.
       - If now valid → break loop and resume
-      - If still invalid → continue loop
-   ```
-
-4. **After resuming:**
-   ```
-   Continue with normal email sending
-   ```
-
-## Benefits
-
-✅ **No wasted sends** - Zero emails sent outside schedule
-✅ **Automatic** - No manual intervention needed
-✅ **Transparent** - Console logs show pause/resume status
-✅ **Precise** - Uses target timezone, not local time
-✅ **Persistent** - Keeps checking, guaranteed to resume
-✅ **Efficient** - Only checks every 5 minutes (not spamming)
-
-## User Impact
-
-**Before (Old behavior):**
-- Campaign slowed down outside schedule (but still sent emails)
-- Could send unwanted emails at wrong times
-
-**After (New behavior):**
-- Campaign completely stops outside schedule
-- Zero emails sent at wrong times
-- Automatically resumes when schedule opens
-- User can leave campaign running overnight/weekend without worry
-
-## Testing
-
-### Test Case 1: Start during scheduled window
-1. Configure: Mon-Fri 9 AM-5 PM
-2. Start campaign: Tuesday 2 PM
-3. Expected: Campaign runs normally
-
-### Test Case 2: Reach end of window
-1. Campaign running Tuesday 4:55 PM
-2. Clock hits 5:00 PM
-3. Expected: Campaign pauses after current email
-4. Console shows: "⏸️ CAMPAIGN PAUSED: Current time is 17:00 (outside 9:00-17:00)"
-
-### Test Case 3: Auto-resume
-1. Campaign paused at 5:00 PM
-2. Clock reaches 9:00 AM next day
-3. Expected: Within 5 minutes, campaign auto-resumes
-4. Console shows: "✅ CAMPAIGN RESUMED: Now in scheduled window!"
-
-### Test Case 4: Wrong day
-1. Configure: Mon-Fri only
-2. Campaign reaches Saturday
-3. Expected: Campaign pauses entire weekend
-4. Console shows: "⏸️ CAMPAIGN PAUSED: Today is Saturday (not in selected days)"
-5. Monday 9 AM: Auto-resumes
-
-## Files Modified
-
-1. `src/pages/api/campaigns/send.ts` - Added pause/resume loop
-2. `src/lib/campaignState.ts` - Added pauseReason field
-3. `TIMEZONE-VERIFICATION.md` - Updated documentation
-
-## No Breaking Changes
-
-- ✅ Backward compatible - works with existing campaigns
-- ✅ Optional - only activates when timezoneConfig is provided
-- ✅ Fallback - campaigns without timezone config work as before
-- ✅ Type-safe - TypeScript compilation passes
-
-## Next Steps for User
-
-1. **Configure timezone schedule** in campaign UI
-2. **Start campaign** - it will run automatically
-3. **Monitor console** - see pause/resume notifications
-4. **Leave running** - campaign handles schedule automatically
-
----
-
-**Status:** ✅ Implemented and Ready to Use
-**Version:** 1.0
-**Date:** October 8, 2025

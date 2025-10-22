@@ -11,7 +11,7 @@ interface CampaignStatus {
   startTime: number | null;
   duration?: number;
   subject?: string;
-  status?: 'idle' | 'running' | 'paused' | 'stopped' | 'completed';
+  status?: 'idle' | 'running' | 'stopped' | 'completed';
   nextEmailIn?: number | null;
   lastDelay?: number | null;
 }
@@ -361,44 +361,7 @@ export default function AnalyticsSection() {
   };
 
   // Campaign control functions
-  const pauseCampaign = async (arg?: any) => {
-    // arg may be a MouseEvent when used as onClick, or a campaignId when called directly
-    const campaignId = typeof arg === 'string' ? arg : undefined;
-    try {
-      const body = campaignId ? { campaignId } : {};
-      const response = await fetch('/api/campaigns/pause', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      if (response.ok) {
-        addToActivityLog(`⏸️ Campaign ${campaignId ? `"${campaignId}"` : ''} paused by user`);
-        setRunningCampaigns(prev => prev.map((c: any) => c.campaignId === campaignId ? { ...c, status: 'paused' } : c));
-      }
-    } catch (error) {
-      console.error('Error pausing campaign:', error);
-      addToActivityLog('❌ Failed to pause campaign');
-    }
-  };
-
-  const resumeCampaign = async (arg?: any) => {
-    const campaignId = typeof arg === 'string' ? arg : undefined;
-    try {
-      const body = campaignId ? { campaignId } : {};
-      const response = await fetch('/api/campaigns/resume', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      if (response.ok) {
-        addToActivityLog(`▶️ Campaign ${campaignId ? `"${campaignId}"` : ''} resumed by user`);
-        setRunningCampaigns(prev => prev.map((c: any) => c.campaignId === campaignId ? { ...c, status: 'running' } : c));
-      }
-    } catch (error) {
-      console.error('Error resuming campaign:', error);
-      addToActivityLog('❌ Failed to resume campaign');
-    }
-  };
+  // Campaign control functions (pause/resume removed)
 
   const stopCampaign = async (arg?: any) => {
     const campaignId = typeof arg === 'string' ? arg : undefined;
@@ -486,10 +449,7 @@ export default function AnalyticsSection() {
                   <div key={campaign.campaignId} className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-2xl p-6 border border-gray-200/60">
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center space-x-4">
-                        <div className={`w-3 h-3 rounded-full ${campaign.status === 'running' ? 'bg-green-500 animate-pulse' :
-                            campaign.status === 'paused' ? 'bg-yellow-500' :
-                              'bg-red-500'
-                          }`}></div>
+                        <div className={`w-3 h-3 rounded-full ${campaign.status === 'running' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
                         <div>
                           <h3 className="text-lg font-semibold text-gray-800">{campaign.campaignName}</h3>
                           <div className="flex items-center space-x-3 mt-1">
@@ -573,36 +533,6 @@ export default function AnalyticsSection() {
                     )}
 
                     <div className="flex space-x-2">
-                      <button
-                        onClick={async () => {
-                          // Optimistically update UI and call API
-                          updateLocalCampaignStatus(campaign.campaignId, 'paused');
-                          try {
-                            await pauseCampaign(campaign.campaignId);
-                          } catch (err) {
-                            // Revert on error
-                            updateLocalCampaignStatus(campaign.campaignId, campaign.status);
-                          }
-                        }}
-                        disabled={campaign.status !== 'running'}
-                        className="flex-1 bg-yellow-100 hover:bg-yellow-200 disabled:bg-gray-100 disabled:text-gray-400 text-yellow-700 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 border border-yellow-200"
-                      >
-                        ⏸️ Pause
-                      </button>
-                      <button
-                        onClick={async () => {
-                          updateLocalCampaignStatus(campaign.campaignId, 'running');
-                          try {
-                            await resumeCampaign(campaign.campaignId);
-                          } catch (err) {
-                            updateLocalCampaignStatus(campaign.campaignId, campaign.status);
-                          }
-                        }}
-                        disabled={campaign.status !== 'paused'}
-                        className="flex-1 bg-green-100 hover:bg-green-200 disabled:bg-gray-100 disabled:text-gray-400 text-green-700 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 border border-green-200"
-                      >
-                        ▶️ Resume
-                      </button>
                       <button
                         onClick={async () => {
                           updateLocalCampaignStatus(campaign.campaignId, 'stopped');

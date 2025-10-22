@@ -8,7 +8,7 @@ interface Campaign {
   userEmail: string;
   campaignName: string;
   subject: string;
-  status: 'running' | 'paused' | 'stopped' | 'completed';
+  status: 'running' | 'stopped' | 'completed';
   totalRecipients: number;
   sentCount: number;
   successCount: number;
@@ -119,8 +119,6 @@ const CampaignsHistorySection = () => {
     switch (status) {
       case 'running':
         return 'bg-blue-100 text-blue-800';
-      case 'paused':
-        return 'bg-yellow-100 text-yellow-800';
       case 'stopped':
         return 'bg-red-100 text-red-800';
       case 'completed':
@@ -132,7 +130,7 @@ const CampaignsHistorySection = () => {
 
   const filteredCampaigns = campaigns.filter(campaign => {
     if (filter === 'all') return true;
-    if (filter === 'running') return campaign.status === 'running' || campaign.status === 'paused';
+    if (filter === 'running') return campaign.status === 'running';
     if (filter === 'completed') return campaign.status === 'completed' || campaign.status === 'stopped';
     return true;
   });
@@ -142,76 +140,7 @@ const CampaignsHistorySection = () => {
     return ((success / total) * 100).toFixed(1);
   };
 
-  // Campaign control handlers
-  const handlePauseCampaign = async (campaignId: string) => {
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        toast.error('Authentication required. Please log in again.');
-        return;
-      }
-
-      const response = await fetch('/api/campaigns/pause', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ campaignId })
-      });
-
-      if (response.ok) {
-        toast.success('Campaign paused successfully');
-        fetchCampaigns(); // Refresh the list
-      } else if (response.status === 401) {
-        toast.error('Authentication failed. Please log in again.');
-      } else if (response.status === 404) {
-        toast.error('Campaign not found. It may have already completed.');
-        fetchCampaigns(); // Refresh to remove from list
-      } else {
-        const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-        toast.error(`Failed to pause campaign: ${error.error || 'Unknown error'}`);
-      }
-    } catch (error) {
-      console.error('Error pausing campaign:', error);
-      toast.error('Network error. Please check your connection and try again.');
-    }
-  };
-
-  const handleResumeCampaign = async (campaignId: string) => {
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        toast.error('Authentication required. Please log in again.');
-        return;
-      }
-
-      const response = await fetch('/api/campaigns/resume', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ campaignId })
-      });
-
-      if (response.ok) {
-        toast.success('Campaign resumed successfully');
-        fetchCampaigns(); // Refresh the list
-      } else if (response.status === 401) {
-        toast.error('Authentication failed. Please log in again.');
-      } else if (response.status === 404) {
-        toast.error('Campaign not found. It may have already completed.');
-        fetchCampaigns(); // Refresh to remove from list
-      } else {
-        const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-        toast.error(`Failed to resume campaign: ${error.error || 'Unknown error'}`);
-      }
-    } catch (error) {
-      console.error('Error resuming campaign:', error);
-      toast.error('Network error. Please check your connection and try again.');
-    }
-  };
+  // Campaign control handlers (pause/resume removed)
 
   const handleStopCampaign = async (campaignId: string) => {
     if (!confirm('Are you sure you want to stop this campaign? This action cannot be undone and will permanently stop the campaign.')) {
@@ -400,7 +329,7 @@ const CampaignsHistorySection = () => {
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              Active ({campaigns.filter(c => c.status === 'running' || c.status === 'paused').length})
+              Active ({campaigns.filter(c => c.status === 'running').length})
             </button>
             <button
               onClick={() => setFilter('completed')}
@@ -478,23 +407,39 @@ const CampaignsHistorySection = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        {campaign.sentCount} / {campaign.totalRecipients}
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
-                        <div
-                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                          style={{ width: `${(campaign.sentCount / campaign.totalRecipients) * 100}%` }}
-                        ></div>
-                      </div>
+                      {(() => {
+                        const sent = Number.isFinite(Number(campaign.sentCount)) ? Number(campaign.sentCount) : 0;
+                        const total = Number.isFinite(Number(campaign.totalRecipients)) ? Number(campaign.totalRecipients) : 0;
+                        const pct = total > 0 ? Math.min(100, Math.max(0, (sent / total) * 100)) : 0;
+
+                        return (
+                          <>
+                            <div className="text-sm text-gray-900">
+                              {sent} / {total}
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
+                              <div
+                                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                                style={{ width: `${pct}%` }}
+                              ></div>
+                            </div>
+                          </>
+                        );
+                      })()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        {calculateSuccessRate(campaign.successCount, campaign.sentCount)}%
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {campaign.successCount} / {campaign.sentCount} sent
-                      </div>
+                      {(() => {
+                        const success = Number.isFinite(Number(campaign.successCount)) ? Number(campaign.successCount) : 0;
+                        const sentSoFar = Number.isFinite(Number(campaign.sentCount)) ? Number(campaign.sentCount) : 0;
+                        const rate = sentSoFar > 0 ? ((success / sentSoFar) * 100).toFixed(1) : '0.0';
+
+                        return (
+                          <>
+                            <div className="text-sm text-gray-900">{rate}%</div>
+                            <div className="text-xs text-gray-500">{success} / {sentSoFar} sent</div>
+                          </>
+                        );
+                      })()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {new Date(campaign.startTime).toLocaleString()}
@@ -502,25 +447,8 @@ const CampaignsHistorySection = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex flex-col gap-1">
                         {/* Control buttons for running campaigns */}
-                        {(campaign.status === 'running' || campaign.status === 'paused') && (
+                        {(campaign.status === 'running' || campaign.status === 'stopped' || campaign.status === 'completed') && (
                           <div className="flex gap-1 mb-1">
-                            {campaign.status === 'running' ? (
-                              <button
-                                onClick={() => handlePauseCampaign(campaign._id)}
-                                className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded hover:bg-yellow-200"
-                                title="Pause campaign"
-                              >
-                                ⏸️ Pause
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => handleResumeCampaign(campaign._id)}
-                                className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded hover:bg-green-200"
-                                title="Resume campaign"
-                              >
-                                ▶️ Resume
-                              </button>
-                            )}
                             <button
                               onClick={() => handleStopCampaign(campaign._id)}
                               className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200"

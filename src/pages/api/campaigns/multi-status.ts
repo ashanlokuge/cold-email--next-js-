@@ -27,9 +27,9 @@ export default async function handler(
     }
 
     // Get all campaigns for the users
-    const allCampaigns = getAllCampaignsForUser(userId);
-    const runningCampaigns = getRunningCampaignsForUser(userId);
-    const stats = getCampaignStatistics(userId);
+    const allCampaigns = await getAllCampaignsForUser(userId);
+    const runningCampaigns = await getRunningCampaignsForUser(userId);
+    const stats = await getCampaignStatistics(userId);
 
     // Return the primary running campaign (first one) for backward compatibility
     const primaryCampaign = runningCampaigns.length > 0 ? runningCampaigns[0] : null;
@@ -63,7 +63,6 @@ export default async function handler(
         completed: campaign.completed,
         startTime: campaign.startTime,
         status: campaign.status,
-        pauseReason: campaign.pauseReason,
         nextEmailIn: campaign.nextEmailIn,
         lastDelay: campaign.lastDelay
       })),
@@ -77,7 +76,6 @@ export default async function handler(
         total: campaign.total,
         status: campaign.status,
         startTime: campaign.startTime,
-        pauseReason: campaign.pauseReason,
         nextEmailIn: campaign.nextEmailIn,
         lastDelay: campaign.lastDelay
       })),

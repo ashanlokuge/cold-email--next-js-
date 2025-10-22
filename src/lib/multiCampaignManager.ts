@@ -1,5 +1,6 @@
-// Multi-campaign management system
+// Multi-campaign management system with MongoDB persistence
 import type { EmailDetail } from '@/types';
+import { connectDB } from './db';
 
 interface CampaignInstance {
   campaignId: string;
@@ -13,43 +14,29 @@ interface CampaignInstance {
   total: number;
   completed: boolean;
   startTime: number;
-  status: 'running' | 'paused' | 'stopped' | 'completed';
-  pauseReason?: string;
+  status: 'running' | 'stopped' | 'completed';
+  // pauseReason removed: pause/resume feature deprecated
   nextEmailIn?: number;
   lastDelay?: number;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
-interface MultiCampaignState {
-  campaigns: Map<string, CampaignInstance>;
-  emailDetails: Map<string, EmailDetail[]>; // campaignId -> email details
-}
-
-// Global state for multiple campaigns
-const globalForMultiCampaign = globalThis as unknown as {
-  multiCampaignState: MultiCampaignState | undefined;
-};
-
-// Initialize multi-campaign state
-const defaultMultiCampaignState: MultiCampaignState = {
-  campaigns: new Map(),
-  emailDetails: new Map()
-};
-
-export let multiCampaignState = globalForMultiCampaign.multiCampaignState ?? defaultMultiCampaignState;
-
-// Initialize global state
-if (!globalForMultiCampaign.multiCampaignState) {
-  globalForMultiCampaign.multiCampaignState = multiCampaignState;
-}
+// Database collection names
+const CAMPAIGNS_COLLECTION = 'campaigns';
+const EMAIL_DETAILS_COLLECTION = 'emailDetails';
 
 // Create a new campaign instance
-export function createCampaignInstance(
+export async function createCampaignInstance(
   campaignId: string,
   campaignName: string,
   userId: string,
   userEmail: string,
   totalRecipients: number
-): CampaignInstance {
+): Promise<CampaignInstance> {
+  const db = await connectDB();
+  const now = new Date();
+
   const campaign: CampaignInstance = {
     campaignId,
     campaignName,
@@ -62,104 +49,159 @@ export function createCampaignInstance(
     total: totalRecipients,
     completed: false,
     startTime: Date.now(),
-    status: 'running'
+    status: 'running',
+    createdAt: now,
+    updatedAt: now
   };
 
-  multiCampaignState.campaigns.set(campaignId, campaign);
-  multiCampaignState.emailDetails.set(campaignId, []);
+  // Avoid creating duplicate DB documents. The repository creates a document with
+  // an ObjectId _id (returned as string). If that exists, update it instead.
+  try {
+    const filter: any = { $or: [{ campaignId }] };
+
+    // If campaignId looks like an ObjectId hex, include _id match as well
+    if (/^[0-9a-fA-F]{24}$/.test(campaignId)) {
+      try {
+        const { ObjectId } = await import('mongodb');
+        filter.$or.push({ _id: new ObjectId(campaignId) });
+      } catch (err) {
+        // ignore if ObjectId not available
+      }
+    }
+
+    await db.collection(CAMPAIGNS_COLLECTION).updateOne(
+      filter,
+      { $set: { ...campaign } },
+      { upsert: true }
+    );
+  } catch (err) {
+    // Fallback to insert if upsert fails for any reason
+    try {
+      await db.collection(CAMPAIGNS_COLLECTION).insertOne(campaign);
+    } catch (e) {
+      console.warn('Failed to persist campaign instance to DB:', e);
+    }
+  }
 
   return campaign;
 }
 
 // Get campaign instance by ID
-export function getCampaignInstance(campaignId: string): CampaignInstance | null {
-  return multiCampaignState.campaigns.get(campaignId) || null;
+export async function getCampaignInstance(campaignId: string): Promise<CampaignInstance | null> {
+  const db = await connectDB();
+  const campaign = await db.collection(CAMPAIGNS_COLLECTION).findOne({ campaignId });
+  return campaign ? (campaign as unknown as CampaignInstance) : null;
 }
 
 // Update campaign instance
-export function updateCampaignInstance(campaignId: string, updates: Partial<CampaignInstance>): void {
-  const campaign = multiCampaignState.campaigns.get(campaignId);
-  if (campaign) {
-    Object.assign(campaign, updates);
-    multiCampaignState.campaigns.set(campaignId, campaign);
-  }
+export async function updateCampaignInstance(campaignId: string, updates: Partial<CampaignInstance>): Promise<void> {
+  const db = await connectDB();
+  await db.collection(CAMPAIGNS_COLLECTION).updateOne(
+    { campaignId },
+    {
+      $set: {
+        ...updates,
+        updatedAt: new Date()
+      }
+    }
+  );
 }
 
 // Get all running campaigns for a user
-export function getRunningCampaignsForUser(userId: string): CampaignInstance[] {
-  return Array.from(multiCampaignState.campaigns.values())
-    .filter(campaign => campaign.userId === userId && campaign.isRunning);
+export async function getRunningCampaignsForUser(userId: string): Promise<CampaignInstance[]> {
+  const db = await connectDB();
+  const campaigns = await db.collection(CAMPAIGNS_COLLECTION)
+    .find({ userId, isRunning: true })
+    .toArray();
+  return campaigns as unknown as CampaignInstance[];
 }
 
 // Get all campaigns for a user
-export function getAllCampaignsForUser(userId: string): CampaignInstance[] {
-  return Array.from(multiCampaignState.campaigns.values())
-    .filter(campaign => campaign.userId === userId);
+export async function getAllCampaignsForUser(userId: string): Promise<CampaignInstance[]> {
+  const db = await connectDB();
+  const campaigns = await db.collection(CAMPAIGNS_COLLECTION)
+    .find({ userId })
+    .sort({ createdAt: -1 })
+    .toArray();
+  return campaigns as unknown as CampaignInstance[];
 }
 
 // Check if user can start a new campaign (limit concurrent campaigns)
-export function canStartNewCampaign(userId: string, maxConcurrent: number = 5): boolean {
-  const runningCampaigns = getRunningCampaignsForUser(userId);
+export async function canStartNewCampaign(userId: string, maxConcurrent: number = 5): Promise<boolean> {
+  const runningCampaigns = await getRunningCampaignsForUser(userId);
   return runningCampaigns.length < maxConcurrent;
 }
 
 // Add email detail to campaign
-export function addEmailDetailToCampaign(campaignId: string, emailDetail: EmailDetail): void {
-  const details = multiCampaignState.emailDetails.get(campaignId) || [];
-  details.push(emailDetail);
-  multiCampaignState.emailDetails.set(campaignId, details);
+export async function addEmailDetailToCampaign(campaignId: string, emailDetail: EmailDetail): Promise<void> {
+  const db = await connectDB();
+  await db.collection(EMAIL_DETAILS_COLLECTION).insertOne({
+    ...emailDetail,
+    campaignId,
+    createdAt: new Date()
+  });
 }
 
 // Get email details for campaign
-export function getEmailDetailsForCampaign(campaignId: string): EmailDetail[] {
-  return multiCampaignState.emailDetails.get(campaignId) || [];
+export async function getEmailDetailsForCampaign(campaignId: string): Promise<EmailDetail[]> {
+  const db = await connectDB();
+  const details = await db.collection(EMAIL_DETAILS_COLLECTION)
+    .find({ campaignId })
+    .sort({ timestamp: 1 })
+    .toArray();
+  return details as unknown as EmailDetail[];
+}
+
+// Get all email details (for all campaigns)
+export async function getAllEmailDetails(limit: number = 200): Promise<EmailDetail[]> {
+  const db = await connectDB();
+  const details = await db.collection(EMAIL_DETAILS_COLLECTION)
+    .find({})
+    .sort({ timestamp: -1 })
+    .limit(limit)
+    .toArray();
+  return details as unknown as EmailDetail[];
 }
 
 // Complete campaign
-export function completeCampaignInstance(campaignId: string): void {
-  updateCampaignInstance(campaignId, {
+export async function completeCampaignInstance(campaignId: string): Promise<void> {
+  await updateCampaignInstance(campaignId, {
     isRunning: false,
     completed: true,
     status: 'completed'
   });
 }
 
-// Pause campaign
-export function pauseCampaignInstance(campaignId: string, reason?: string): void {
-  updateCampaignInstance(campaignId, {
-    isRunning: false,
-    status: 'paused',
-    pauseReason: reason
-  });
-}
-
-// Resume campaign
-export function resumeCampaignInstance(campaignId: string): void {
-  updateCampaignInstance(campaignId, {
-    isRunning: true,
-    status: 'running',
-    pauseReason: undefined
-  });
-}
-
 // Stop campaign
-export function stopCampaignInstance(campaignId: string): void {
-  updateCampaignInstance(campaignId, {
+export async function stopCampaignInstance(campaignId: string): Promise<void> {
+  await updateCampaignInstance(campaignId, {
     isRunning: false,
     status: 'stopped'
   });
 }
 
 // Remove campaign instance (cleanup)
-export function removeCampaignInstance(campaignId: string): void {
-  multiCampaignState.campaigns.delete(campaignId);
-  multiCampaignState.emailDetails.delete(campaignId);
+export async function removeCampaignInstance(campaignId: string): Promise<void> {
+  const db = await connectDB();
+  await db.collection(CAMPAIGNS_COLLECTION).deleteOne({ campaignId });
+  await db.collection(EMAIL_DETAILS_COLLECTION).deleteMany({ campaignId });
+}
+
+// Clean up old stopped campaigns from in-memory system (older than 1 hour)
+export async function cleanupOldStoppedCampaigns(): Promise<void> {
+  const db = await connectDB();
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  
+  await db.collection(CAMPAIGNS_COLLECTION).deleteMany({
+    status: { $in: ['stopped', 'completed'] },
+    updatedAt: { $lt: oneHourAgo }
+  });
 }
 
 // Get campaign statistics
-export function getCampaignStatistics(userId: string) {
-  const allCampaigns = getAllCampaignsForUser(userId);
-  const runningCampaigns = getRunningCampaignsForUser(userId);
+export async function getCampaignStatistics(userId: string) {
+  const allCampaigns = await getAllCampaignsForUser(userId);
+  const runningCampaigns = await getRunningCampaignsForUser(userId);
 
   const totalEmails = allCampaigns.reduce((sum, c) => sum + c.total, 0);
   const totalSent = allCampaigns.reduce((sum, c) => sum + c.sent, 0);
@@ -179,30 +221,9 @@ export function getCampaignStatistics(userId: string) {
 }
 
 // Legacy compatibility functions (for existing code)
-export function getCampaignStatus() {
-  // Return the first running campaign for backward compatibility
-  const runningCampaign = Array.from(multiCampaignState.campaigns.values())
-    .find(c => c.isRunning);
-
-  if (runningCampaign) {
-    return {
-      isRunning: runningCampaign.isRunning,
-      campaignName: runningCampaign.campaignName,
-      sent: runningCampaign.sent,
-      successful: runningCampaign.successful,
-      failed: runningCampaign.failed,
-      total: runningCampaign.total,
-      completed: runningCampaign.completed,
-      startTime: runningCampaign.startTime,
-      status: runningCampaign.status,
-      pauseReason: runningCampaign.pauseReason,
-      nextEmailIn: runningCampaign.nextEmailIn,
-      lastDelay: runningCampaign.lastDelay,
-      campaignId: runningCampaign.campaignId
-    };
-  }
-
-  // Return default status if no running campaigns
+export async function getCampaignStatus() {
+  // This function is deprecated - campaigns now require userId
+  console.warn('getCampaignStatus() is deprecated. Use getRunningCampaignsForUser(userId) instead.');
   return {
     isRunning: false,
     campaignName: '',
@@ -212,43 +233,29 @@ export function getCampaignStatus() {
     total: 0,
     completed: false,
     startTime: null,
-    status: 'idle' as const,
+  status: 'idle' as const,
     campaignId: null
   };
 }
 
-export function updateCampaignStatus(updates: Partial<CampaignInstance>): void {
-  // Update the first running campaign for backward compatibility
-  const runningCampaign = Array.from(multiCampaignState.campaigns.values())
-    .find(c => c.isRunning);
-
-  if (runningCampaign && updates.campaignId) {
-    updateCampaignInstance(updates.campaignId, updates);
+export async function updateCampaignStatus(updates: Partial<CampaignInstance>): Promise<void> {
+  if (updates.campaignId) {
+    await updateCampaignInstance(updates.campaignId, updates);
   }
 }
 
-export function addEmailDetail(emailDetail: EmailDetail): void {
-  // Add to the first running campaign for backward compatibility
-  const runningCampaign = Array.from(multiCampaignState.campaigns.values())
-    .find(c => c.isRunning);
-
-  if (runningCampaign) {
-    addEmailDetailToCampaign(runningCampaign.campaignId, emailDetail);
+export async function addEmailDetail(emailDetail: EmailDetail): Promise<void> {
+  if (emailDetail.campaignId) {
+    await addEmailDetailToCampaign(emailDetail.campaignId, emailDetail);
   }
 }
 
-export function completeCampaign(): void {
-  // Complete the first running campaign for backward compatibility
-  const runningCampaign = Array.from(multiCampaignState.campaigns.values())
-    .find(c => c.isRunning);
-
-  if (runningCampaign) {
-    completeCampaignInstance(runningCampaign.campaignId);
-  }
+export async function completeCampaign(): Promise<void> {
+  // This legacy function needs campaignId - for now, we'll skip
+  console.warn('completeCampaign() is deprecated. Use completeCampaignInstance(campaignId) instead.');
 }
 
-export function resetCampaignStatus(): void {
-  // Reset all campaigns (for backward compatibility)
-  multiCampaignState.campaigns.clear();
-  multiCampaignState.emailDetails.clear();
+export async function resetCampaignStatus(): Promise<void> {
+  // This is dangerous and deprecated
+  console.warn('resetCampaignStatus() is deprecated and does nothing in the new implementation');
 }
