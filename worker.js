@@ -1,14 +1,35 @@
-require('ts-node/register');
+// Configure ts-node before requiring any TypeScript files
+require('ts-node').register({
+  project: './tsconfig.worker.json',
+  transpileOnly: true,
+  compilerOptions: {
+    module: 'commonjs',
+    target: 'es2017',
+    moduleResolution: 'node',
+    esModuleInterop: true,
+    allowSyntheticDefaultImports: true,
+    strict: false,
+    skipLibCheck: true,
+    forceConsistentCasingInFileNames: true,
+    resolveJsonModule: true,
+    isolatedModules: false,
+    noEmit: true
+  }
+});
+
 require('tsconfig-paths/register');
 
 const { Worker, QueueEvents } = require('bullmq');
 
-// Redis connection from Railway env varss
-const connection = {
-  host: process.env.REDIS_HOST,
-  port: Number(process.env.REDIS_PORT || '6379'),
-  password: process.env.REDIS_PASSWORD
-};
+// Redis connection from Railway env vars - use REDIS_URL
+const REDIS_URL = process.env.REDIS_URL;
+
+if (!REDIS_URL) {
+  console.error('❌ REDIS_URL environment variable is missing');
+  process.exit(1);
+}
+
+const connection = REDIS_URL;
 
 async function main() {
   // Lazy import TS module after ts-node/register
