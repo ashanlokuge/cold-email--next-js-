@@ -3,7 +3,7 @@ require('tsconfig-paths/register');
 
 const { Worker, QueueEvents } = require('bullmq');
 
-// Redis connection from Railway env vars
+// Redis connection from Railway env varss
 const connection = {
   host: process.env.REDIS_HOST,
   port: Number(process.env.REDIS_PORT || '6379'),
