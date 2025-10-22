@@ -193,11 +193,17 @@ export default async function handler(
     }
 
     // Enqueue job to BullMQ and return 202
-    const connection = new IORedis({
-      host: process.env.REDIS_HOST,
-      port: Number(process.env.REDIS_PORT || '6379'),
-      password: process.env.REDIS_PASSWORD
-    });
+    // 1. Get the single external URL. This is the correct way to connect across networks (Vercel -> Railway).
+    const REDIS_EXTERNAL_URL = process.env.REDIS_URL || process.env.REDIS_PUBLIC_URL;
+
+    if (!REDIS_EXTERNAL_URL) {
+      console.error('REDIS_URL is missing. Cannot enqueue job externally.');
+      return res.status(500).json({ error: 'Server configuration error: Redis URL missing.' });
+    }
+
+    // 2. IORedis/BullMQ connects using the full URL string directly.
+    // This URL contains the public host, port, and password.
+    const connection = new IORedis(REDIS_EXTERNAL_URL);
 
     const queue = new Queue('emailCampaignQueue', { connection });
 
