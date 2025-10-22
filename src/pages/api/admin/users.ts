@@ -19,7 +19,7 @@ export default async function handler(
           .find({}, { projection: { password: 0 } })
           .toArray();
 
-        // Normalize dates to strings to avoid Invalid Date in UI
+        // Normalize dates to strings to avoid Invalid Date in UI this new
         const normalized = users.map((u) => {
           const safe = (val: any) => {
             if (!val) return null;
@@ -57,8 +57,8 @@ export default async function handler(
         }
 
         // Check if user already exists
-        const existingUser = await usersCollection.findOne({ 
-          email: email.toLowerCase() 
+        const existingUser = await usersCollection.findOne({
+          email: email.toLowerCase()
         });
 
         if (existingUser) {

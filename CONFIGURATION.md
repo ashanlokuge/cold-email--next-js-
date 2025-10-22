@@ -2,7 +2,7 @@
 
 This document explains all configurable parameters in the ColdSendz email campaign system.
 
-## Required Environment Variables
+## Required Environment Variables...
 
 These must be set in your `.env` file:
 
