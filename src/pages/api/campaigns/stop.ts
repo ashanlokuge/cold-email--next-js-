@@ -39,6 +39,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(404).json({ error: 'Campaign not found' });
     }
 
+    // Update both systems
     await stopCampaignInstance(campaignId);
 
     // Persist to DB
@@ -47,6 +48,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         status: 'stopped',
         endTime: new Date()
       });
+      console.log(`✅ Campaign ${campaignId} status updated to 'stopped' in database`);
     } catch (err) {
       console.warn('Failed to persist stop to DB:', err?.message || err);
     }

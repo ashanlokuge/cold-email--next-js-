@@ -10,11 +10,11 @@ type CampaignStatus = {
   total: number;
   completed: boolean;
   startTime: number | null;
-  status: 'idle' | 'running' | 'paused' | 'stopped' | 'completed';
+  status: 'idle' | 'running' | 'stopped' | 'completed';
   campaignId?: string | null;
   nextEmailIn?: number | null; // Seconds until next email
   lastDelay?: number | null; // Last calculated delay in ms
-  pauseReason?: string | null; // Reason for pause (timezone/schedule)
+  // pauseReason removed: pause/resume feature deprecated
 };
 
 // Global state that persists across API calls (like HTML/JS project)
@@ -128,28 +128,6 @@ export function clearEmailDetails() {
 }
 
 // Campaign control functions
-export function pauseCampaign() {
-  if (currentCampaignStatus.isRunning && currentCampaignStatus.status === 'running') {
-    currentCampaignStatus = {
-      ...currentCampaignStatus,
-      status: 'paused'
-    };
-    globalForCampaign.campaignStatus = currentCampaignStatus;
-    console.log('⏸️ Campaign paused');
-  }
-}
-
-export function resumeCampaign() {
-  if (currentCampaignStatus.isRunning && currentCampaignStatus.status === 'paused') {
-    currentCampaignStatus = {
-      ...currentCampaignStatus,
-      status: 'running'
-    };
-    globalForCampaign.campaignStatus = currentCampaignStatus;
-    console.log('▶️ Campaign resumed');
-  }
-}
-
 export function stopCampaign() {
   if (currentCampaignStatus.isRunning) {
     currentCampaignStatus = {

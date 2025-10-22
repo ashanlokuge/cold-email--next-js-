@@ -63,7 +63,6 @@ export default async function handler(
         completed: campaign.completed,
         startTime: campaign.startTime,
         status: campaign.status,
-        pauseReason: campaign.pauseReason,
         nextEmailIn: campaign.nextEmailIn,
         lastDelay: campaign.lastDelay
       })),
@@ -77,7 +76,6 @@ export default async function handler(
         total: campaign.total,
         status: campaign.status,
         startTime: campaign.startTime,
-        pauseReason: campaign.pauseReason,
         nextEmailIn: campaign.nextEmailIn,
         lastDelay: campaign.lastDelay
       })),

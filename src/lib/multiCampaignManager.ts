@@ -14,8 +14,8 @@ interface CampaignInstance {
   total: number;
   completed: boolean;
   startTime: number;
-  status: 'running' | 'paused' | 'stopped' | 'completed';
-  pauseReason?: string;
+  status: 'running' | 'stopped' | 'completed';
+  // pauseReason removed: pause/resume feature deprecated
   nextEmailIn?: number;
   lastDelay?: number;
   createdAt: Date;
@@ -172,24 +172,6 @@ export async function completeCampaignInstance(campaignId: string): Promise<void
   });
 }
 
-// Pause campaign
-export async function pauseCampaignInstance(campaignId: string, reason?: string): Promise<void> {
-  await updateCampaignInstance(campaignId, {
-    isRunning: false,
-    status: 'paused',
-    pauseReason: reason
-  });
-}
-
-// Resume campaign
-export async function resumeCampaignInstance(campaignId: string): Promise<void> {
-  await updateCampaignInstance(campaignId, {
-    isRunning: true,
-    status: 'running',
-    pauseReason: undefined
-  });
-}
-
 // Stop campaign
 export async function stopCampaignInstance(campaignId: string): Promise<void> {
   await updateCampaignInstance(campaignId, {
@@ -203,6 +185,17 @@ export async function removeCampaignInstance(campaignId: string): Promise<void> 
   const db = await connectDB();
   await db.collection(CAMPAIGNS_COLLECTION).deleteOne({ campaignId });
   await db.collection(EMAIL_DETAILS_COLLECTION).deleteMany({ campaignId });
+}
+
+// Clean up old stopped campaigns from in-memory system (older than 1 hour)
+export async function cleanupOldStoppedCampaigns(): Promise<void> {
+  const db = await connectDB();
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  
+  await db.collection(CAMPAIGNS_COLLECTION).deleteMany({
+    status: { $in: ['stopped', 'completed'] },
+    updatedAt: { $lt: oneHourAgo }
+  });
 }
 
 // Get campaign statistics
@@ -240,7 +233,7 @@ export async function getCampaignStatus() {
     total: 0,
     completed: false,
     startTime: null,
-    status: 'idle' as const,
+  status: 'idle' as const,
     campaignId: null
   };
 }

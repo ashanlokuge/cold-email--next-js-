@@ -13,7 +13,7 @@ This feature allows users to track their email campaigns with full history, stat
   - `campaignName` - User-defined campaign name
   - `subject` - Email subject line
   - `body` - Email body content
-  - `status` - Current status: 'running' | 'paused' | 'stopped' | 'completed'
+  - `status` - Current status: 'running' | 'stopped' | 'completed'
   - `totalRecipients` - Total number of recipients
   - `sentCount` - Number of emails sent
   - `successCount` - Number of successfully delivered emails
@@ -71,14 +71,16 @@ A centralized repository class for all campaign database operations:
 - **Progress Updates**: Updates stats every 10 emails
 - **Completion**: Sets status to 'completed' and endTime when done
 
-#### `/api/campaigns/pause` (POST)
-- **Updated**: Persists pause status to MongoDB via campaignRepository
-
-#### `/api/campaigns/resume` (POST)
-- **Updated**: Persists running status to MongoDB via campaignRepository
-
 #### `/api/campaigns/stop` (POST)
-- **Updated**: Persists stopped status and endTime to MongoDB via campaignRepository
+- **Authentication**: JWT required
+- **Purpose**: Stop a running campaign
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "message": "Campaign stopped successfully"
+  }
+  ```
 
 ### 4. Campaign History UI (`src/components/sections/CampaignsHistorySection.tsx`)
 
@@ -90,7 +92,7 @@ A centralized repository class for all campaign database operations:
 
 **Filter Tabs:**
 - All Campaigns
-- Active Campaigns (running/paused)
+- Active Campaigns (running)
 - Completed Campaigns (completed/stopped)
 
 **Campaign Table:**
@@ -128,8 +130,8 @@ A centralized repository class for all campaign database operations:
 9. Mark complete with status='completed' and endTime
 
 ### Campaign Control
-1. User clicks Pause/Resume/Stop in "Campaign Progress" section
-2. POST to respective API endpoint
+1. User clicks Stop in "Campaign Progress" section
+2. POST to `/api/campaigns/stop`
 3. Update in-memory state (globalThis) for real-time UI
 4. Persist status change to MongoDB via campaignRepository
 5. Return updated status to frontend
@@ -195,9 +197,7 @@ db.campaigns.createIndex({ userId: 1, status: 1 });
 
 ### Manual Testing Checklist
 - [ ] Create a campaign and verify it appears in history
-- [ ] Pause a campaign and check status updates
-- [ ] Resume a campaign and verify status
-- [ ] Stop a campaign and check endTime is set
+- [ ] Stop a campaign and check status updates
 - [ ] View campaign details and verify email logs
 - [ ] Test filters (All/Active/Completed)
 - [ ] Test with multiple users to verify isolation

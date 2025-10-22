@@ -9,7 +9,7 @@ export interface CampaignDocument {
   campaignName: string;
   subject: string;
   body: string;
-  status: 'running' | 'paused' | 'stopped' | 'completed';
+  status: 'running' | 'stopped' | 'completed';
   
   // Recipients info
   totalRecipients: number;
@@ -85,7 +85,7 @@ export class CampaignRepository {
       sentCount?: number;
       successCount?: number;
       failedCount?: number;
-      status?: 'running' | 'paused' | 'stopped' | 'completed';
+  status?: 'running' | 'stopped' | 'completed';
       endTime?: Date;
     }
   ): Promise<void> {
@@ -157,7 +157,7 @@ export class CampaignRepository {
     const collection = await this.getCollection();
     
     const query: any = {
-      status: { $in: ['running', 'paused'] }
+      status: 'running'
     };
     
     if (userId) {
@@ -179,7 +179,7 @@ export class CampaignRepository {
     const campaigns = await collection
       .find({
         userId,
-        status: { $in: ['completed', 'stopped'] }
+    status: { $in: ['completed', 'stopped'] }
       })
       .sort({ endTime: -1 })
       .limit(limit)
@@ -208,7 +208,7 @@ export class CampaignRepository {
           runningCampaigns: {
             $sum: {
               $cond: [
-                { $in: ['$status', ['running', 'paused']] },
+                { $eq: ['$status', 'running'] },
                 1,
                 0
               ]

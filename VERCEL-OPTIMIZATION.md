@@ -7,19 +7,19 @@ The campaign execution has been optimized for Vercel serverless functions with t
 ### ✅ Optimizations Applied
 
 1. **Reduced Polling Frequency**
-   - **Before**: Checked pause/resume status every 2 seconds
+   - **Before**: Checked stop status every 2 seconds
    - **After**: Checks every 10-15 seconds
    - **Benefit**: 80% reduction in database calls, less console spam
 
 2. **Configurable Intervals**
    ```typescript
-   const PAUSE_CHECK_INTERVAL = 10000;  // Check pause/resume every 10s
-   const PAUSE_POLL_INTERVAL = 15000;   // While paused, check every 15s  
+   const STOP_CHECK_INTERVAL = 10000;  // Check stop status every 10s
+   const STOP_POLL_INTERVAL = 15000;   // While stopped, check every 15s  
    const DELAY_CHECK_INTERVAL = 5000;   // Check during delays every 5s
    ```
 
 3. **Less Noisy Logging**
-   - Only logs pause status every 30 seconds instead of every check
+   - Only logs stop status every 30 seconds instead of every check
    - Reduces console spam significantly
 
 ## Vercel Function Limits
@@ -76,7 +76,7 @@ Process campaigns in small chunks, each chunk runs in a separate function call.
 **Pros:**
 - ✅ No timeout issues
 - ✅ Works on all Vercel plans
-- ✅ Pause/Resume works perfectly (just stop calling next chunk)
+- ✅ Stop works perfectly (just stop calling next chunk)
 - ✅ Stop works instantly (set status in DB)
 
 **Cons:**
@@ -112,8 +112,8 @@ The code is currently optimized with:
 
 ```typescript
 // In send.ts
-const PAUSE_CHECK_INTERVAL = 10000;  // 10 seconds
-const PAUSE_POLL_INTERVAL = 15000;   // 15 seconds  
+const STOP_CHECK_INTERVAL = 10000;  // 10 seconds
+const STOP_POLL_INTERVAL = 15000;   // 15 seconds  
 const DELAY_CHECK_INTERVAL = 5000;   // 5 seconds
 ```
 
@@ -121,22 +121,22 @@ const DELAY_CHECK_INTERVAL = 5000;   // 5 seconds
 
 **Vercel Hobby (10s limit):**
 ```typescript
-const PAUSE_CHECK_INTERVAL = 3000;   // 3 seconds
-const PAUSE_POLL_INTERVAL = 5000;    // 5 seconds
+const STOP_CHECK_INTERVAL = 3000;   // 3 seconds
+const STOP_POLL_INTERVAL = 5000;    // 5 seconds
 const DELAY_CHECK_INTERVAL = 2000;   // 2 seconds
 ```
 
 **Vercel Pro (60s limit):**
 ```typescript
-const PAUSE_CHECK_INTERVAL = 10000;  // 10 seconds (current)
-const PAUSE_POLL_INTERVAL = 15000;   // 15 seconds (current)
+const STOP_CHECK_INTERVAL = 10000;  // 10 seconds (current)
+const STOP_POLL_INTERVAL = 15000;   // 15 seconds (current)
 const DELAY_CHECK_INTERVAL = 5000;   // 5 seconds (current)
 ```
 
 **Self-Hosted (no limits):**
 ```typescript
-const PAUSE_CHECK_INTERVAL = 2000;   // 2 seconds  
-const PAUSE_POLL_INTERVAL = 3000;    // 3 seconds
+const STOP_CHECK_INTERVAL = 2000;   // 2 seconds  
+const STOP_POLL_INTERVAL = 3000;    // 3 seconds
 const DELAY_CHECK_INTERVAL = 1000;   // 1 second
 ```
 
@@ -168,7 +168,6 @@ const campaign = await campaignRepository.getCampaignById(campaignId);
 
 // Status can be:
 // - 'running': Campaign is actively sending
-// - 'paused': User paused the campaign
 // - 'stopped': User stopped the campaign  
 // - 'completed': Campaign finished naturally
 ```
@@ -217,8 +216,8 @@ Start Campaign → Process Chunk 1 → Save Progress
 ### Monitor Logs:
 ```bash
 # Watch for these messages:
-✅ "Campaign paused. Checking resume status..." (good, not spamming)
-❌ "Campaign paused during wait. Polling for resume..." (old, too frequent)
+✅ "Campaign stopped. Checking stop status..." (good, not spamming)
+❌ "Campaign stopped during wait. Polling for stop..." (old, too frequent)
 ⚠️ "Function timeout" (needs chunking)
 ```
 

@@ -7,7 +7,7 @@ Your campaign will **ONLY** send emails:
 2. ✅ During the time period you set (e.g., 9 AM - 5 PM)
 3. ✅ In the target timezone you choose (e.g., Australia/Sydney)
 
-**IMPORTANT:** Campaign will **COMPLETELY PAUSE** outside scheduled times and **AUTOMATICALLY RESUME** when the schedule window opens.
+**IMPORTANT:** Campaign will **COMPLETELY STOP** outside scheduled times and **AUTOMATICALLY CONTINUE** when the schedule window opens.
 
 ## How It Works - Complete Flow
 
@@ -74,20 +74,20 @@ Time: 9:00 AM to 5:00 PM
   // Returns true if current hour is 9-16 (9 AM to 4:59 PM)
   ```
 
-### 4. Campaign Execution Control (send.ts - Pause & Resume Logic)
+### 4. Campaign Execution Control (send.ts - Automatic Scheduling Logic)
 
 **Before sending each email** (Line 601-650 in send.ts):
 ```typescript
 // Check if outside scheduled window
 while (!isSendingAllowedToday(config) || !isWithinSendingWindow(config)) {
-  console.log("⏸️  CAMPAIGN PAUSED: Outside scheduled window");
+  console.log("⏸️  CAMPAIGN STOPPED: Outside scheduled window");
   
   // Wait 5 minutes
   await sleep(5 * 60 * 1000);
   
   // Check again - if now in window, resume
   if (isSendingAllowedToday(config) && isWithinSendingWindow(config)) {
-    console.log("✅ CAMPAIGN RESUMED: Now in scheduled window!");
+    console.log("✅ CAMPAIGN CONTINUED: Now in scheduled window!");
     break;
   }
 }
@@ -98,12 +98,12 @@ while (!isSendingAllowedToday(config) || !isWithinSendingWindow(config)) {
 **What this means:**
 - ✅ **During scheduled window:** Emails send normally with human-like delays (30-120 seconds)
 - ⏸️ **Outside scheduled window:** Campaign completely stops, checks every 5 minutes
-- 🔄 **Auto-resume:** When schedule window opens, campaign automatically continues
+- 🔄 **Auto-continue:** When schedule window opens, campaign automatically continues
 
 **Impact on campaign:**
 - **Within schedule**: Emails send at normal speed (30-120s between emails)
-- **Outside schedule**: Campaign pauses completely, NO emails sent
-- **Wrong day**: Campaign pauses until correct day arrives
+- **Outside schedule**: Campaign stops completely, NO emails sent
+- **Wrong day**: Campaign stops until correct day arrives
 - **Checks every**: 5 minutes to see if schedule window has opened
 
 ### 5. Final Delay Calculation (utils.ts)
@@ -112,7 +112,7 @@ while (!isSendingAllowedToday(config) || !isWithinSendingWindow(config)) {
 const finalDelay = baseDelay * fatigueMultiplier * senderVariation * patternBreaker;
 ```
 
-**Note:** The delay multiplier system has been replaced with hard pause/resume logic for better control.
+**Note:** The delay multiplier system has been replaced with hard stop/continue logic for better control.
 
 ## Real-World Example
 
@@ -161,9 +161,9 @@ const finalDelay = baseDelay * fatigueMultiplier * senderVariation * patternBrea
    20 >= 9 && 20 < 17  ❌ FAIL (8 PM is outside 9 AM - 5 PM)
    ```
 
-7. **Campaign pauses:**
+7. **Campaign stops:**
    ```
-   ⏸️  CAMPAIGN PAUSED: Current time is 20:00 (outside 9:00-17:00)
+   ⏸️  CAMPAIGN STOPPED: Current time is 20:00 (outside 9:00-17:00)
    🕐 Target timezone: Australia/Sydney
    ⏳ Waiting 5 minutes before checking again...
    ```
@@ -171,7 +171,7 @@ const finalDelay = baseDelay * fatigueMultiplier * senderVariation * patternBrea
 8. **Result:**
    - Campaign completely stops sending emails
    - Checks every 5 minutes
-   - Will resume automatically at 9 AM Australia time next day
+   - Will continue automatically at 9 AM Australia time next day
 
 ## Code Proof - Line by Line
 
@@ -181,9 +181,9 @@ const finalDelay = baseDelay * fatigueMultiplier * senderVariation * patternBrea
 | `timezoneConfig.ts` | 199-207 | Gets current day in target timezone | ✅ |
 | `timezoneConfig.ts` | 228-233 | Checks if today is allowed day | ✅ |
 | `timezoneConfig.ts` | 238-242 | Checks if current hour is in window | ✅ |
-| `send.ts` | 601-650 | Pause loop - stops campaign outside schedule | ✅ |
+| `send.ts` | 601-650 | Stop loop - stops campaign outside schedule | ✅ |
 | `send.ts` | 610-620 | Checks every 5 minutes if schedule opened | ✅ |
-| `send.ts` | 630-645 | Auto-resumes when schedule window opens | ✅ |
+| `send.ts` | 630-645 | Auto-continues when schedule window opens | ✅ |
 | `utils.ts` | 161-169 | Calculates normal human-like delays | ✅ |
 | `campaignState.ts` | 15 | Added pauseReason field for UI display | ✅ |
 | `ComposeSection.tsx` | 331-443 | UI for timezone/schedule selection | ✅ |
@@ -198,12 +198,12 @@ const finalDelay = baseDelay * fatigueMultiplier * senderVariation * patternBrea
 ### Scenario 2: Wrong Time ⏸️
 - **Config:** Australia/Sydney, Mon-Fri, 9 AM-5 PM
 - **Current:** Tuesday 8 PM in Sydney
-- **Result:** Campaign pauses completely, checks every 5 minutes, will resume at 9 AM
+- **Result:** Campaign stops completely, checks every 5 minutes, will continue at 9 AM
 
 ### Scenario 3: Wrong Day ⏸️
 - **Config:** Australia/Sydney, Mon-Fri, 9 AM-5 PM
 - **Current:** Saturday 2 PM in Sydney
-- **Result:** Campaign pauses completely, checks every 5 minutes, will resume Monday 9 AM
+- **Result:** Campaign stops completely, checks every 5 minutes, will continue Monday 9 AM
 
 ### Scenario 4: Weekend Enabled ✅
 - **Config:** Australia/Sydney, All days checked, 9 AM-5 PM
