@@ -22,7 +22,7 @@ require('tsconfig-paths/register');
 const { Worker, QueueEvents } = require('bullmq');
 
 // Redis connection from Railway env vars - use REDIS_URL
-const REDIS_URL = process.env.REDIS_URL;
+const REDIS_URL = process.env.REDIS_PUBLIC_URL;
 
 if (!REDIS_URL) {
   console.error('❌ REDIS_URL environment variable is missing');
