@@ -1,0 +1,48 @@
+# Vercel ignore file
+node_modules
+.next
+.env
+.env.local
+.env.production
+.env.development
+*.log
+.DS_Store
+Thumbs.db
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Build artifacts
+dist
+build
+out
+
+# Test files
+test
+tests
+__tests__
+*.test.js
+*.test.ts
+*.spec.js
+*.spec.ts
+
+# Documentation
+*.md
+docs/
+
+# Scripts
+scripts/
+deploy.sh
+deploy.ps1
+start-*.sh
+start-*.ps1
+
+# Worker files (deploy separately)
+worker.js
+worker-commonjs.js
+railway*.json
+
+# Test files
+test-*.js

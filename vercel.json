@@ -1,12 +1,6 @@
 {
   "version": 2,
   "name": "coldsendz-nextjs",
-  "builds": [
-    {
-      "src": "package.json",
-      "use": "@vercel/next"
-    }
-  ],
   "functions": {
     "src/pages/api/**/*.ts": {
       "runtime": "nodejs18.x",
@@ -15,5 +9,8 @@
     "src/pages/api/campaigns/send.ts": {
       "maxDuration": 60
     }
-  }
+  },
+  "regions": [
+    "iad1"
+  ]
 }
