@@ -39,7 +39,7 @@ export default function Layout({ children }: LayoutProps) {
         </div>
       </header>
 
-      {/* Main Content */}
+      {/* Main Content is */}
       <div className="flex h-[calc(100vh-61px)]">
         {children}
       </div>
