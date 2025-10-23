@@ -18,7 +18,8 @@
     "test:setup": "node test-local-setup.js",
     "db:health": "node -e \"require('./src/lib/db').healthCheck().then(r => console.log('DB Health:', r ? 'OK' : 'FAILED')).catch(e => console.log('DB Error:', e.message))\"",
     "build:app": "npm run build",
-    "build:worker": "WORKER_ONLY=1 npm run build",
+    "build:worker": "echo 'Worker-only deployment - no build needed'",
+    "build:worker-only": "echo 'Worker-only deployment - no build needed'",
     "deploy:vercel": "vercel --prod",
     "deploy:railway": "railway up"
   },
