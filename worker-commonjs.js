@@ -1,3 +1,6 @@
+// Load environment variables first
+require('dotenv').config({ path: '.env.local' });
+
 // Configure ts-node before requiring any TypeScript files
 require('ts-node').register({
   project: './tsconfig.worker.json',
@@ -20,16 +23,23 @@ require('ts-node').register({
 require('tsconfig-paths/register');
 
 const { Worker, QueueEvents } = require('bullmq');
+const IORedis = require('ioredis');
 
 // Redis connection from Railway env vars - use REDIS_URL
-const REDIS_URL = process.env.REDIS_PUBLIC_URL;
+const REDIS_URL = process.env.REDIS_URL || process.env.REDIS_PUBLIC_URL;
 
 if (!REDIS_URL) {
   console.error('❌ REDIS_URL environment variable is missing');
+  console.error('Available env vars:', Object.keys(process.env).filter(k => k.includes('REDIS')));
   process.exit(1);
 }
 
-const connection = REDIS_URL;
+// Create IORedis connection with BullMQ-compatible options
+const connection = new IORedis(REDIS_URL, {
+  maxRetriesPerRequest: null,
+  enableReadyCheck: false,
+  maxLoadingTimeout: 1000
+});
 
 async function main() {
   console.log('🚀 Starting BullMQ Worker...');
