@@ -15,6 +15,16 @@ const nextConfig = {
     JITTER_PCT: process.env.JITTER_PCT || '50',
     MAX_RETRIES: process.env.MAX_RETRIES || '3',
   },
+  // ESLint configuration for build
+  eslint: {
+    // Allow warnings during build, only fail on errors
+    ignoreDuringBuilds: false,
+  },
+  // TypeScript configuration for build
+  typescript: {
+    // Allow warnings during build, only fail on errors
+    ignoreBuildErrors: false,
+  },
   // API route configuration moved to individual API routes
   // Ensure proper build output
   trailingSlash: false,
