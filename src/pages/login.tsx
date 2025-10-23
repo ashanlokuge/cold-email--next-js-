@@ -129,7 +129,7 @@ const LoginPage = () => {
             {/* Footer */}
             <div className="mt-6 text-center">
               <p className="text-sm text-gray-600">
-                Don't have an account? Contact your administrator to create one.
+                Don&apos;t have an account? Contact your administrator to create one.
               </p>
             </div>
           </div>

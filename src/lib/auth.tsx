@@ -26,40 +26,61 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isMounted, setIsMounted] = useState(false);
   const router = useRouter();
 
   const isAuthenticated = !!user;
 
+  // Ensure we only run client-side code after mounting
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   const login = (token: string, userData: User) => {
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(userData));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(userData));
+    }
     setUser(userData);
   };
 
   const logout = async () => {
     try {
       // Call logout API to invalidate server-side session if needed
-      await fetch('/api/auth/logout', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+      if (token) {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+      }
     } catch (error) {
       console.error('Logout API error:', error);
     }
 
     // Clear local storage
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+    }
     setUser(null);
     
     // Redirect to login
-    router.push('/login');
-    toast.success('Logged out successfully');
+    if (isMounted) {
+      router.push('/login');
+      toast.success('Logged out successfully');
+    }
   };
 
   const checkAuth = async (): Promise<boolean> => {
+    // Only run on client side
+    if (typeof window === 'undefined') {
+      setIsLoading(false);
+      return false;
+    }
+
     const token = localStorage.getItem('token');
     
     if (!token) {
@@ -97,8 +118,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   useEffect(() => {
-    checkAuth();
-  }, []); // Only run once on mount
+    if (isMounted) {
+      checkAuth();
+    }
+  }, [isMounted]); // Only run after component mounts
 
   const value: AuthContextType = {
     user,
@@ -139,16 +162,21 @@ export const withAuth = <P extends object>(WrappedComponent: React.ComponentType
     const { isAuthenticated, isLoading } = useAuth();
     const router = useRouter();
     const [shouldRedirect, setShouldRedirect] = useState(false);
+    const [isMounted, setIsMounted] = useState(false);
 
     useEffect(() => {
-      if (!isLoading && !isAuthenticated && !shouldRedirect) {
+      setIsMounted(true);
+    }, []);
+
+    useEffect(() => {
+      if (isMounted && !isLoading && !isAuthenticated && !shouldRedirect) {
         setShouldRedirect(true);
         router.replace('/login'); // Use replace instead of push to avoid history
       }
-    }, [isAuthenticated, isLoading, router, shouldRedirect]);
+    }, [isAuthenticated, isLoading, router, shouldRedirect, isMounted]);
 
     // Don't render anything while loading or redirecting
-    if (isLoading || !isAuthenticated) {
+    if (!isMounted || isLoading || !isAuthenticated) {
       return null;
     }
 
