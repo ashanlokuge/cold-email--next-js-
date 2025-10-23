@@ -1,16 +1,4 @@
 {
   "version": 2,
-  "name": "coldsendz-nextjs",
-  "functions": {
-    "src/pages/api/**/*.ts": {
-      "runtime": "nodejs18.x",
-      "maxDuration": 30
-    },
-    "src/pages/api/campaigns/send.ts": {
-      "maxDuration": 60
-    }
-  },
-  "regions": [
-    "iad1"
-  ]
+  "name": "coldsendz-nextjs"
 }
