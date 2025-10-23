@@ -1,0 +1,34 @@
+{
+  "name": "coldsendz-worker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "echo 'Worker-only deployment - no build needed'",
+    "start": "node worker-commonjs.js",
+    "worker": "node worker-commonjs.js"
+  },
+  "dependencies": {
+    "@azure/arm-communication": "^4.1.0",
+    "@azure/communication-email": "^1.0.0",
+    "@azure/identity": "^4.12.0",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/papaparse": "^5.3.14",
+    "bcryptjs": "^3.0.2",
+    "bullmq": "^5.10.0",
+    "csv-parser": "^3.0.0",
+    "dotenv": "^17.2.3",
+    "ioredis": "^5.4.1",
+    "jsonwebtoken": "^9.0.2",
+    "mongodb": "^6.20.0",
+    "multer": "^1.4.5-lts.1",
+    "papaparse": "^5.4.1",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0"
+  },
+  "devDependencies": {
+    "@types/multer": "^1.4.11",
+    "@types/node": "^20.9.0",
+    "typescript": "^5.2.2"
+  }
+}
