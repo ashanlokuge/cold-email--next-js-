@@ -1,9 +1,4 @@
 {
   "version": 2,
-  "name": "coldsendz-nextjs",
-  "functions": {
-    "src/pages/api/campaigns/send.ts": {
-      "maxDuration": 60
-    }
-  }
+  "name": "coldsendz-nextjs"
 }

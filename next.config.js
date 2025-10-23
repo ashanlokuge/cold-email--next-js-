@@ -15,6 +15,10 @@ const nextConfig = {
     JITTER_PCT: process.env.JITTER_PCT || '50',
     MAX_RETRIES: process.env.MAX_RETRIES || '3',
   },
+  // API route configuration moved to individual API routes
+  // Ensure proper build output
+  trailingSlash: false,
+  generateEtags: false,
 }
 
 module.exports = nextConfig
