@@ -19,6 +19,8 @@ const nextConfig = {
   // Ensure proper build output
   trailingSlash: false,
   generateEtags: false,
+  // Enable standalone output for Railway deployment
+  output: 'standalone',
 }
 
 module.exports = nextConfig
